@@ -17,7 +17,7 @@ observation layer (plan §5.3) is the next workstream.
 
 ### Build and test
 
-The solution targets .NET 8 (LTS) and the core has no OS dependency.
+The solution targets .NET 10 (LTS) and the core has no OS dependency.
 
 ```sh
 dotnet build
@@ -464,10 +464,10 @@ targeting .NET 8). It does not change any prior decision.
 
 #### Decision
 
-- **Language/runtime.** The core library targets `net8.0` and has no Windows or
-  UI Automation dependency, so it stays deterministic and testable on any
-  platform. The eventual enforcement layer (UI Automation, service,
-  self-protection) builds on top of it.
+- **Language/runtime.** The core library targets `net10.0` (the current LTS) and
+  has no Windows or UI Automation dependency, so it stays deterministic and
+  testable on any platform. The eventual enforcement layer (UI Automation,
+  service, self-protection) builds on top of it.
 - **Pure, clock-injected engine.** `BudgetEngine.Tick(windows, now)` is the only
   entry point. The caller supplies the browser snapshot and the current instant
   every tick; the engine owns no clock and no OS state, which makes the whole
