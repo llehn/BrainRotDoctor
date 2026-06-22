@@ -97,8 +97,12 @@ on the target):
 
 ```sh
 dotnet publish src/BrainRotBlocker.App -c Release -r win-x64 --self-contained true ^
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
+  -p:EnableCompressionInSingleFile=true -o publish
 ```
+
+Compression keeps it a single double-click exe (~71&nbsp;MB) that self-extracts at
+launch; installed size is unaffected.
 
 The resulting `publish\BrainRotBlocker.exe` is what a user downloads and
 double-clicks. It self-installs (`--install`), and the registered uninstall runs
