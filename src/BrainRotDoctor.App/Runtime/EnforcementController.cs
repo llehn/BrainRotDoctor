@@ -53,6 +53,9 @@ internal sealed class EnforcementController : IDisposable
 
     public event EventHandler<AppStatus>? StatusChanged;
 
+    /// <summary>Raised on the enforcement thread immediately after a tab is closed.</summary>
+    public event EventHandler<CloseEvent>? TabClosed;
+
     public AppStatus Status
     {
         get
@@ -220,16 +223,17 @@ internal sealed class EnforcementController : IDisposable
 
     private void AddClosure(DateTimeOffset now, ObservedBrowserWindow window, CloseDecision decision)
     {
+        var closure = new CloseEvent(now, window.BrowserName, decision.Url, decision.RuleId);
         lock (_sync)
         {
-            _recentClosures.Insert(
-                0,
-                new CloseEvent(now, window.BrowserName, decision.Url, decision.RuleId));
+            _recentClosures.Insert(0, closure);
             if (_recentClosures.Count > 12)
             {
                 _recentClosures.RemoveRange(12, _recentClosures.Count - 12);
             }
         }
+
+        TabClosed?.Invoke(this, closure);
     }
 
     private AppStatus BuildStatus(

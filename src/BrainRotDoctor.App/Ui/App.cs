@@ -12,6 +12,7 @@ internal sealed class App : Application
 {
     private readonly EnforcementController _controller;
     private readonly UiSettingsStore _settings;
+    private readonly ToastNotifier _toasts = new();
     private MainWindow? _window;
 
     public App(EnforcementController controller, UiSettingsStore settings)
@@ -54,8 +55,26 @@ internal sealed class App : Application
             tray.Clicked += (_, _) => _window.ShowFromTray();
 
             desktop.MainWindow = _window;
+
+            _controller.TabClosed += OnTabClosed;
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void OnTabClosed(object? sender, CloseEvent e)
+    {
+        string host = e.Url.Host;
+        if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            host = host[4..];
+        }
+
+        string message = string.IsNullOrWhiteSpace(host)
+            ? "Closed a brain-rot tab — back to it."
+            : $"Closed a brain-rot tab on {host}.";
+
+        // ToastNotifier marshals onto the UI thread; this fires on the enforcement thread.
+        _toasts.Show("Worm extracted \U0001FAB1", message);
     }
 }
