@@ -276,6 +276,9 @@ internal sealed class MainWindow : Window
             CornerRadius = new CornerRadius(14),
             BorderThickness = new Thickness(1.5),
             Child = label,
+            // A null background isn't hit-testable, so without this only the text
+            // glyphs would catch the tap; transparent makes the whole card clickable.
+            Background = Brushes.Transparent,
             Cursor = new Cursor(StandardCursorType.Hand),
             [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Accent),
         };
