@@ -1,11 +1,8 @@
 # BrainRotBlocker
 
-BrainRotBlocker is a planned Windows application for limiting Instagram
+BrainRotBlocker is a Windows application for limiting Instagram
 doom-scrolling while retaining access to useful surfaces such as Direct
 Messages and Stories.
-
-See [idea.md](idea.md) for the original concept and [plan.md](plan.md) for the
-production roadmap.
 
 ## Status
 
@@ -757,3 +754,13 @@ not a bypass guarantee).
 - The distributable is large (~150 MB) because it is self-contained including
   WPF (referenced only for the UI Automation client) and Avalonia; slimming this
   is possible future work.
+
+## Contributing, License, and Security
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for build,
+test, and coding-standard guidance, and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Licensed under the [MIT License](LICENSE).
+
+To report a security issue, follow [SECURITY.md](SECURITY.md) (please report
+privately rather than in a public issue).

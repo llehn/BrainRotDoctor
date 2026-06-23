@@ -237,41 +237,45 @@ internal static class Program
             return strictLoaded;
         }
 
-        // Resolution order: explicit --config, then a repo config (for dev), then
-        // the existing per-user config, and only on a true first run do we write
-        // freshly-generated (localized) defaults. Crucially we never overwrite an
-        // existing user config on launch.
+        // The user's working config lives at the per-user path; the shipped
+        // config/default-config.json is only a read-only seed used on first run.
+        // Editing rules in the app therefore never rewrites the shipped default.
         string userPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "BrainRotBlocker",
             "config.json");
 
-        string? configPath = TryGetConfigPath(args) ?? ConfigurationPathResolver.FindDefaultConfig();
-        if (configPath is null)
-        {
-            configPath = File.Exists(userPath) ? userPath : null;
-        }
-
-        if (configPath is null)
-        {
-            // First run: write defaults with rule names in the detected language.
-            string defaults = BuildDefaultConfigJson();
-            Directory.CreateDirectory(Path.GetDirectoryName(userPath)!);
-            File.WriteAllText(userPath, defaults);
-            return new LoadedConfiguration(ConfigurationLoader.Load(defaults), userPath, defaults, userPath);
-        }
-
-        string json = File.ReadAllText(configPath);
+        ConfigResolution resolution;
         try
         {
-            return new LoadedConfiguration(ConfigurationLoader.Load(json), configPath, json, configPath);
+            resolution = StartupConfigResolver.Resolve(
+                TryGetConfigPath(args),
+                userPath,
+                ConfigurationPathResolver.FindDefaultConfig,
+                BuildDefaultConfigJson);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A missing/unreadable --config path or other filesystem error must
+            // not stop the guard. Fall back to in-memory defaults targeting the
+            // user config so the app still runs and can re-save.
+            string fallback = BuildDefaultConfigJson();
+            return new LoadedConfiguration(ConfigurationLoader.Load(fallback), userPath, fallback, userPath);
+        }
+
+        try
+        {
+            return new LoadedConfiguration(
+                ConfigurationLoader.Load(resolution.Json), resolution.Source, resolution.Json, resolution.FilePath);
         }
         catch (ConfigurationException)
         {
             // A malformed file should not stop the guard. Fall back to localized
-            // defaults; the user can fix and re-save from the UI.
+            // defaults; the save target stays the same so the user can fix and
+            // re-save from the UI.
             string defaults = BuildDefaultConfigJson();
-            return new LoadedConfiguration(ConfigurationLoader.Load(defaults), configPath, defaults, configPath);
+            return new LoadedConfiguration(
+                ConfigurationLoader.Load(defaults), resolution.Source, defaults, resolution.FilePath);
         }
     }
 
