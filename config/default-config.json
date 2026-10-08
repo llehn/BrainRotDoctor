@@ -2,13 +2,16 @@
   // BrainRotDoctor configuration. Edit this file to add or change rules
   // without recompiling the application.
   //
-  // A "rule" is what to block plus when to block it:
-  //   - "sites": the things it blocks. Pick from the built-in catalog with
-  //       "catalogId" (canonical label + matching), or add a custom site with a
-  //       "label" + "url" (+ optional "includeSubpaths": true to also match pages
-  //       beneath it).
+  // A "rule" is what to limit plus when:
+  //   - "sites": the websites it covers. Each site has a "host", a list of
+  //       "pages" and what happens to "everythingElse" on the site ("block" or
+  //       "allow"). A page has a "path", a "match" ("exact" = only this page,
+  //       "under" = this page and everything beneath it, "prefix" = every path
+  //       starting with this text), optional "query" conditions, and an
+  //       "action" ("block" or "allow"). When several pages fit an address, the
+  //       most specific one decides.
   //   - "allowanceMinutes": minutes of access allowed per hour. Omit it to block
-  //       the sites completely while the rule is active.
+  //       completely while the rule is active.
   //   - "allDay": true, or set "allDay": false with a "from"/"to" 24-hour window
   //       (a window whose "to" is earlier than "from" wraps past midnight).
   //   - "days": which weekdays the rule applies on. Omit for every day.
@@ -20,10 +23,44 @@
       "allowanceMinutes": 5,
       "allDay": true,
       "sites": [
-        { "catalogId": "yt-shorts" },
-        { "catalogId": "ig-reels" },
-        { "catalogId": "fb-reels" },
-        { "catalogId": "tiktok" }
+        {
+          "catalogId": "youtube", "label": "YouTube", "host": "youtube.com", "everythingElse": "allow",
+          "pages": [
+            { "name": "Home feed", "path": "/", "match": "exact", "action": "allow" },
+            { "name": "Shorts", "path": "/shorts", "match": "under", "action": "block" },
+            { "name": "Subscriptions", "path": "/feed/subscriptions", "match": "under", "action": "allow" },
+            { "name": "Watching a video", "path": "/watch", "match": "under", "action": "allow" }
+          ]
+        },
+        {
+          "catalogId": "instagram", "label": "Instagram", "host": "instagram.com", "everythingElse": "allow",
+          "pages": [
+            { "name": "Home feed", "path": "/", "match": "exact", "action": "allow" },
+            { "name": "Following feed", "path": "/", "match": "exact", "query": { "variant": "following" }, "action": "allow" },
+            { "name": "Reels", "path": "/reel", "match": "prefix", "action": "block" },
+            { "name": "Explore", "path": "/explore", "match": "under", "action": "allow" },
+            { "name": "Messages", "path": "/direct", "match": "under", "action": "allow" }
+          ]
+        },
+        {
+          "catalogId": "facebook", "label": "Facebook", "host": "facebook.com", "everythingElse": "allow",
+          "pages": [
+            { "name": "News feed", "path": "/", "match": "exact", "action": "allow" },
+            { "name": "Reels", "path": "/reel", "match": "prefix", "action": "block" },
+            { "name": "Watch", "path": "/watch", "match": "under", "action": "allow" },
+            { "name": "Marketplace", "path": "/marketplace", "match": "under", "action": "allow" },
+            { "name": "Messenger", "path": "/messages", "match": "under", "action": "allow" }
+          ]
+        },
+        {
+          "catalogId": "tiktok", "label": "TikTok", "host": "tiktok.com", "everythingElse": "block",
+          "pages": [
+            { "name": "For You", "path": "/foryou", "match": "under", "action": "block" },
+            { "name": "Following", "path": "/following", "match": "under", "action": "block" },
+            { "name": "Explore", "path": "/explore", "match": "under", "action": "block" },
+            { "name": "Messages", "path": "/messages", "match": "under", "action": "block" }
+          ]
+        }
       ]
     },
     {
@@ -32,7 +69,16 @@
       "allowanceMinutes": 5,
       "allDay": true,
       "sites": [
-        { "catalogId": "ig-feed" }
+        {
+          "catalogId": "instagram", "label": "Instagram", "host": "instagram.com", "everythingElse": "allow",
+          "pages": [
+            { "name": "Home feed", "path": "/", "match": "exact", "action": "block" },
+            { "name": "Following feed", "path": "/", "match": "exact", "query": { "variant": "following" }, "action": "allow" },
+            { "name": "Reels", "path": "/reel", "match": "prefix", "action": "allow" },
+            { "name": "Explore", "path": "/explore", "match": "under", "action": "allow" },
+            { "name": "Messages", "path": "/direct", "match": "under", "action": "allow" }
+          ]
+        }
       ]
     }
   ]

@@ -7,7 +7,7 @@ public class BlockerConfigurationTests
 {
     private static Rule Rule(string id, string url) => new(
         id, id,
-        new[] { new TargetSite(url, SiteUrl.ToPattern(url, includeSubpaths: true)) },
+        new[] { TargetSite.FromUrl(url, url, includeSubpaths: true) },
         TimeSpan.FromMinutes(5), allDay: true, default, default, null);
 
     [Fact]
@@ -46,8 +46,9 @@ public class BlockerConfigurationTests
         Assert.Contains(config.MatchingRules(new Uri("https://instagram.com/")),
             r => r.Id == DefaultConfiguration.FeedsRuleId);
 
-        // Instagram DMs and normal YouTube must remain unaffected.
+        // Instagram DMs, the Following feed and normal YouTube must remain unaffected.
         Assert.Empty(config.MatchingRules(new Uri("https://instagram.com/direct/inbox")));
+        Assert.Empty(config.MatchingRules(new Uri("https://www.instagram.com/?variant=following")));
         Assert.Empty(config.MatchingRules(new Uri("https://www.youtube.com/watch?v=x")));
     }
 }

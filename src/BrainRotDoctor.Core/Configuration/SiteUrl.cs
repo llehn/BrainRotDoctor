@@ -1,48 +1,23 @@
-using System.Text.RegularExpressions;
-
 namespace BrainRotDoctor.Core.Configuration;
 
+/// <summary>A typed website address split into its parts.</summary>
+public sealed record SiteAddress(string Host, string Path, IReadOnlyList<KeyValuePair<string, string>> Query);
+
 /// <summary>
-/// Turns the URL a user types ("instagram.com/reels") into a
-/// <see cref="UrlPattern"/>, so the user never has to think about hosts, path
-/// prefixes, or regular expressions. The rules are intentionally simple:
-/// <list type="bullet">
-///   <item>A bare host ("tiktok.com") matches the whole site.</item>
-///   <item>A host with a path ("instagram.com/reels") matches that path and,
-///   when <c>includeSubpaths</c> is set, everything beneath it.</item>
-/// </list>
+/// Parses the website addresses a user types ("instagram.com/?variant=following")
+/// so nobody has to think about schemes, "www." or URL encoding.
 /// </summary>
 public static class SiteUrl
 {
-    /// <summary>
-    /// Parses <paramref name="url"/> and builds the matching pattern.
-    /// </summary>
-    /// <param name="url">The website address the user typed.</param>
-    /// <param name="includeSubpaths">
-    /// When the URL has a path, whether to also match pages beneath it. Ignored
-    /// for a bare host (which always matches the whole site).
-    /// </param>
-    public static UrlPattern ToPattern(string url, bool includeSubpaths)
-    {
-        (string host, string path) = Parse(url);
-        path = path.TrimEnd('/');
-
-        if (path.Length == 0)
-        {
-            // Root address: "include subpaths" means the whole site; otherwise
-            // only the front page (so e.g. Instagram DMs stay reachable).
-            return includeSubpaths
-                ? new UrlPattern(host)
-                : new UrlPattern(host, pathRegex: "^/?$");
-        }
-
-        return includeSubpaths
-            ? new UrlPattern(host, pathPrefixes: new[] { path })
-            : new UrlPattern(host, pathRegex: $"^{Regex.Escape(path)}/?$");
-    }
-
     /// <summary>Extracts the normalized host and path from a typed URL.</summary>
     public static (string Host, string Path) Parse(string url)
+    {
+        SiteAddress address = ParseAddress(url);
+        return (address.Host, address.Path);
+    }
+
+    /// <summary>Extracts the normalized host, path and query conditions from a typed URL.</summary>
+    public static SiteAddress ParseAddress(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -61,17 +36,48 @@ public static class SiteUrl
             throw new ConfigurationException($"'{url}' is not a valid website address.");
         }
 
-        string host = uri.Host;
-        if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
-        {
-            host = host[4..];
-        }
-
-        if (string.IsNullOrWhiteSpace(host))
+        string host = NormalizeHost(uri.Host);
+        if (host.Length == 0)
         {
             throw new ConfigurationException($"'{url}' is missing a website host.");
         }
 
-        return (host, uri.AbsolutePath);
+        return new SiteAddress(host, uri.AbsolutePath, ParseQuery(uri.Query));
     }
+
+    /// <summary>Lower-cases a host and drops a leading "www." and stray dots.</summary>
+    public static string NormalizeHost(string? host)
+    {
+        string text = (host ?? "").Trim().Trim('.').ToLowerInvariant();
+        if (text.Contains("://", StringComparison.Ordinal))
+        {
+            text = text[(text.IndexOf("://", StringComparison.Ordinal) + 3)..];
+        }
+
+        int slash = text.IndexOf('/');
+        if (slash >= 0)
+        {
+            text = text[..slash];
+        }
+
+        return text.StartsWith("www.", StringComparison.Ordinal) ? text[4..] : text;
+    }
+
+    /// <summary>Splits "?a=1&amp;b" into decoded name/value pairs.</summary>
+    public static IReadOnlyList<KeyValuePair<string, string>> ParseQuery(string? query)
+    {
+        var pairs = new List<KeyValuePair<string, string>>();
+        string text = (query ?? "").TrimStart('?');
+        foreach (string part in text.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = part.IndexOf('=');
+            string key = eq >= 0 ? part[..eq] : part;
+            string value = eq >= 0 ? part[(eq + 1)..] : "";
+            pairs.Add(new(Decode(key), Decode(value)));
+        }
+
+        return pairs;
+    }
+
+    private static string Decode(string text) => Uri.UnescapeDataString(text.Replace('+', ' '));
 }

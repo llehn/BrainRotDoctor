@@ -1,65 +1,19 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace BrainRotDoctor.Core.Configuration;
 
 /// <summary>
-/// Loads a <see cref="BlockerConfiguration"/> from JSON so the rule set can be
+/// Loads a <see cref="BlockerConfiguration"/> from JSON (see
+/// <see cref="ConfigurationDocument"/> for the format) so the rule set can be
 /// changed without recompiling the application.
-///
-/// Example:
-/// <code>
-/// {
-///   "rules": [
-///     {
-///       "id": "short-video",
-///       "name": "Short video",
-///       "allowanceMinutes": 5,        // omit to block completely
-///       "allDay": true,               // or false with "from"/"to"
-///       "from": "23:00", "to": "07:00",
-///       "days": ["Monday", "Tuesday"],// omit for every day
-///       "sites": [
-///         { "label": "Instagram Reels", "url": "instagram.com/reels",
-///           "includeSubpaths": true }
-///       ]
-///     }
-///   ]
-/// }
-/// </code>
 /// </summary>
 public static class ConfigurationLoader
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
+    public static BlockerConfiguration Load(string json) => Load(ConfigurationDocument.Parse(json));
+
+    public static BlockerConfiguration Load(ConfigurationDocument document)
     {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
-    public static BlockerConfiguration Load(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            throw new ConfigurationException("Configuration JSON is empty.");
-        }
-
-        ConfigurationDto? dto;
-        try
-        {
-            dto = JsonSerializer.Deserialize<ConfigurationDto>(json, SerializerOptions);
-        }
-        catch (JsonException ex)
-        {
-            throw new ConfigurationException($"Configuration JSON is malformed: {ex.Message}", ex);
-        }
-
-        if (dto is null)
-        {
-            throw new ConfigurationException("Configuration JSON deserialized to null.");
-        }
-
+        ArgumentNullException.ThrowIfNull(document);
         var rules = new List<Rule>();
-        foreach (RuleDto rule in dto.Rules ?? new())
+        foreach (RuleDocument rule in document.Rules ?? new())
         {
             rules.Add(MapRule(rule));
         }
@@ -77,34 +31,15 @@ public static class ConfigurationLoader
         return Load(File.ReadAllText(path));
     }
 
-    private static Rule MapRule(RuleDto dto)
+    public static Rule MapRule(RuleDocument dto)
     {
+        ArgumentNullException.ThrowIfNull(dto);
         if (string.IsNullOrWhiteSpace(dto.Id))
         {
             throw new ConfigurationException("A rule is missing its 'id'.");
         }
 
-        var sites = new List<TargetSite>();
-        foreach (SiteDto site in dto.Sites ?? new())
-        {
-            // Catalog items are canonical: resolve their pattern and label from the
-            // built-in catalog so an entry's matching can improve over time and a
-            // label can never drift from what it actually blocks.
-            if (!string.IsNullOrWhiteSpace(site.CatalogId)
-                && SiteCatalog.TryGet(site.CatalogId, out CatalogEntry entry))
-            {
-                sites.Add(new TargetSite(entry.Label, entry.ToPattern()));
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(site.Url))
-            {
-                throw new ConfigurationException($"Rule '{dto.Id}' has a site with no 'url'.");
-            }
-
-            UrlPattern pattern = SiteUrl.ToPattern(site.Url, site.IncludeSubpaths ?? true);
-            sites.Add(new TargetSite(site.Label ?? site.Url, pattern));
-        }
+        var sites = SiteMigration.Migrate(dto.Sites, dto.Id).Select(MapSite).ToList();
 
         TimeSpan? allowance = dto.AllowanceMinutes is { } minutes
             ? TimeSpan.FromMinutes(minutes)
@@ -122,6 +57,42 @@ public static class ConfigurationLoader
             ParseTime(dto.To, dto.Id, "to"),
             ParseDays(dto.Days, dto.Id));
     }
+
+    /// <summary>Validates one site in the current (page-based) format.</summary>
+    public static TargetSite MapSite(SiteDocument site)
+    {
+        ArgumentNullException.ThrowIfNull(site);
+        if (site.IsLegacy)
+        {
+            return SiteMigration.Migrate(new[] { site }, site.Label ?? "?").Select(MapSite).Single();
+        }
+
+        var pages = new List<SitePage>();
+        foreach (PageDocument page in site.Pages ?? new())
+        {
+            pages.Add(new SitePage(
+                page.Name ?? "",
+                page.Path ?? "/",
+                PageDocument.ParseMatch(page.Match),
+                page.Query?.ToList(),
+                ParseAction(page.Action, defaultBlock: true)));
+        }
+
+        return new TargetSite(
+            site.Label ?? site.Host ?? "",
+            site.Host ?? "",
+            pages,
+            ParseAction(site.EverythingElse, defaultBlock: false),
+            site.CatalogId);
+    }
+
+    private static bool ParseAction(string? text, bool defaultBlock) => text?.Trim().ToLowerInvariant() switch
+    {
+        SiteDocument.Block => true,
+        SiteDocument.Allow => false,
+        null or "" => defaultBlock,
+        _ => throw new ConfigurationException($"Unknown action '{text}'. Use block or allow."),
+    };
 
     private static TimeOnly ParseTime(string? value, string id, string field)
     {
@@ -164,31 +135,5 @@ public static class ConfigurationLoader
         }
 
         return result;
-    }
-
-    private sealed class ConfigurationDto
-    {
-        [JsonPropertyName("rules")]
-        public List<RuleDto>? Rules { get; set; }
-    }
-
-    private sealed class RuleDto
-    {
-        public string? Id { get; set; }
-        public string? Name { get; set; }
-        public int? AllowanceMinutes { get; set; }
-        public bool? AllDay { get; set; }
-        public string? From { get; set; }
-        public string? To { get; set; }
-        public List<string>? Days { get; set; }
-        public List<SiteDto>? Sites { get; set; }
-    }
-
-    private sealed class SiteDto
-    {
-        public string? CatalogId { get; set; }
-        public string? Label { get; set; }
-        public string? Url { get; set; }
-        public bool? IncludeSubpaths { get; set; }
     }
 }

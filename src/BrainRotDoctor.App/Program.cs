@@ -34,6 +34,14 @@ internal static class Program
             return;
         }
 
+#if DEBUG
+        if (TryGetOption(args, "--ui-snapshots", "--ui-snapshots") is { } snapshotDir)
+        {
+            UiSnapshots.Run(snapshotDir, args);
+            return;
+        }
+#endif
+
         string currentExe = Environment.ProcessPath
             ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
             ?? throw new InvalidOperationException("Cannot resolve the executable path.");
@@ -253,12 +261,18 @@ internal static class Program
 
     private static LoadedConfiguration LoadConfiguration(string[] args, StrictModeStore strictModeStore)
     {
-        if (strictModeStore.TryLoadActiveConfiguration(out LoadedConfiguration? strictLoaded)
-            && strictLoaded is not null)
-        {
-            return strictLoaded;
-        }
+        LoadedConfiguration loaded = LoadUserConfiguration(args);
 
+        // While strict mode runs, its locked rules win over whatever the file now
+        // says (a hand edit can't undo the lock); every other rule stays editable.
+        string locked = strictModeStore.ApplyLock(loaded.Json);
+        return locked == loaded.Json
+            ? loaded
+            : new LoadedConfiguration(ConfigurationLoader.Load(locked), loaded.Source, locked, loaded.FilePath);
+    }
+
+    private static LoadedConfiguration LoadUserConfiguration(string[] args)
+    {
         // The user's working config lives at the per-user path; the shipped
         // config/default-config.json is only a read-only seed used on first run.
         // Editing rules in the app therefore never rewrites the shipped default.
@@ -305,27 +319,7 @@ internal static class Program
     private static string BuildDefaultConfigJson()
     {
         (string shortVideo, string feeds) = Ui.Loc.DefaultRuleNames();
-        return $$"""
-        {
-          "rules": [
-            {
-              "id": "short-video", "name": "{{shortVideo}}", "allowanceMinutes": 5, "allDay": true,
-              "sites": [
-                { "catalogId": "yt-shorts" },
-                { "catalogId": "ig-reels" },
-                { "catalogId": "fb-reels" },
-                { "catalogId": "tiktok" }
-              ]
-            },
-            {
-              "id": "feeds", "name": "{{feeds}}", "allowanceMinutes": 5, "allDay": true,
-              "sites": [
-                { "catalogId": "ig-feed" }
-              ]
-            }
-          ]
-        }
-        """;
+        return DefaultConfiguration.CreateDocument(shortVideo, feeds).ToJson();
     }
 
     private static string? TryGetConfigPath(string[] args) => TryGetOption(args, "--config", "-c");

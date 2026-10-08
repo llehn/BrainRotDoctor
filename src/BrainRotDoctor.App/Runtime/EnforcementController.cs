@@ -17,6 +17,8 @@ internal sealed class EnforcementController : IDisposable
     private string? _configurationFilePath;
     private readonly StrictModeStore _strictModeStore;
     private readonly UsageStore _usageStore;
+    private readonly PauseStore _pauseStore;
+    private PauseState? _pause;
     private readonly string? _logPath;
     private readonly System.Threading.Timer _timer;
     private readonly object _sync = new();
@@ -34,7 +36,8 @@ internal sealed class EnforcementController : IDisposable
         string? configurationFilePath,
         StrictModeStore strictModeStore,
         string? logPath = null,
-        UsageStore? usageStore = null)
+        UsageStore? usageStore = null,
+        PauseStore? pauseStore = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         _observer = observer ?? throw new ArgumentNullException(nameof(observer));
@@ -44,6 +47,8 @@ internal sealed class EnforcementController : IDisposable
         _configurationFilePath = configurationFilePath;
         _strictModeStore = strictModeStore;
         _usageStore = usageStore ?? new UsageStore();
+        _pauseStore = pauseStore ?? new PauseStore();
+        _pause = _strictModeStore.GetSnapshot().IsActive ? null : _pauseStore.Load(DateTimeOffset.UtcNow);
         _logPath = logPath;
         _engine = new BudgetEngine(configuration);
         // Pick up the hour's usage left by a previous run / save / update swap so a
@@ -74,22 +79,50 @@ internal sealed class EnforcementController : IDisposable
         }
     }
 
-    public StrictModeSnapshot ActivateStrictMode(TimeSpan duration)
+    /// <summary>Locks the given rules (null = all) for <paramref name="duration"/>; ends any pause.</summary>
+    public StrictModeSnapshot ActivateStrictMode(TimeSpan duration, IReadOnlyCollection<string>? lockedRuleIds = null)
     {
-        StrictModeSnapshot snapshot = _strictModeStore.Activate(duration, _configurationJson);
+        StrictModeSnapshot snapshot = _strictModeStore.Activate(duration, _configurationJson, lockedRuleIds);
+        SetPause(null);
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
         return snapshot;
+    }
+
+    /// <summary>
+    /// Stops blocking and allowance counting for <paramref name="duration"/> (null =
+    /// until <see cref="Resume"/>). Refused while strict mode is active.
+    /// </summary>
+    public bool Pause(TimeSpan? duration)
+    {
+        if (_strictModeStore.GetSnapshot().IsActive)
+        {
+            return false;
+        }
+
+        SetPause(new PauseState(duration is { } d ? DateTimeOffset.UtcNow + d : null));
+        Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
+        return true;
+    }
+
+    public void Resume()
+    {
+        SetPause(null);
+        Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
     }
 
     public EditableConfiguration GetEditableConfiguration() =>
         EditableConfiguration.FromJson(_configurationJson);
 
+    /// <summary>
+    /// Validates and saves <paramref name="editable"/>. During strict mode a save is
+    /// refused only when it changes or removes a locked rule.
+    /// </summary>
     public bool TrySaveConfiguration(EditableConfiguration editable, out string? error)
     {
         error = null;
-        if (_strictModeStore.GetSnapshot().IsActive)
+        if (_strictModeStore.FindLockViolations(editable) is { } locked)
         {
-            error = "Strict mode is active. Configuration is locked until the commitment ends.";
+            error = $"Locked by strict mode: {string.Join(", ", locked)}";
             return false;
         }
 
@@ -193,10 +226,20 @@ internal sealed class EnforcementController : IDisposable
         try
         {
             DateTimeOffset now = DateTimeOffset.Now;
+            if (_pause is { } pause && !pause.IsActiveAt(now))
+            {
+                SetPause(null);
+            }
+
             IReadOnlyList<ObservedBrowserWindow> windows = _observer.GetSelectedTabs();
             WriteLog(now, $"observed {windows.Count} window(s): {string.Join(" || ", windows.Select(w => $"{w.BrowserName}:{w.WindowId}:{w.Url?.AbsoluteUri ?? "(null)"}"))}");
+
+            // While paused the engine still ticks (so hours roll over and the
+            // clock stays current) but sees no tabs: nothing is charged or closed.
             TickResult result = _engine.Tick(
-                windows.Select(w => new BrowserWindowState(w.WindowId, w.Url)).ToArray(),
+                IsPaused(now)
+                    ? Array.Empty<BrowserWindowState>()
+                    : windows.Select(w => new BrowserWindowState(w.WindowId, w.Url)).ToArray(),
                 now);
 
             foreach (CloseDecision decision in result.CloseDecisions)
@@ -273,8 +316,27 @@ internal sealed class EnforcementController : IDisposable
                 rules,
                 _recentClosures.ToArray(),
                 _strictModeStore.GetSnapshot(),
+                _pause,
                 lastError);
         }
+    }
+
+    private bool IsPaused(DateTimeOffset now)
+    {
+        lock (_sync)
+        {
+            return _pause?.IsActiveAt(now) == true;
+        }
+    }
+
+    private void SetPause(PauseState? pause)
+    {
+        lock (_sync)
+        {
+            _pause = pause;
+        }
+
+        _pauseStore.Save(pause);
     }
 
     private void PersistUsage() => _usageStore.Save(_engine.ExportUsage());

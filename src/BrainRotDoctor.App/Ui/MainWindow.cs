@@ -7,14 +7,18 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
-using BrainRotDoctor.Core.Configuration;
-using System.Threading.Tasks;
 
 namespace BrainRotDoctor.App.Ui;
 
-internal sealed class MainWindow : Window
+/// <summary>
+/// The main window. Rules, Strict mode and Settings live next to a sidebar;
+/// editing a rule and adding websites take over the whole window. The UI is
+/// built in code and rebuilt per screen; live numbers (time left, countdowns)
+/// update in place from the enforcement status.
+/// </summary>
+internal sealed partial class MainWindow : Window
 {
-    private enum Page { Home, Edit, Settings, Strict }
+    private enum Page { Home, Editor, AddSites, Strict, Settings }
 
     private static readonly DayOfWeek[] DayOrder =
     {
@@ -25,22 +29,18 @@ internal sealed class MainWindow : Window
     private readonly EnforcementController _controller;
     private readonly UiSettingsStore _settings;
     private readonly Action<ThemePreference> _applyTheme;
-
     private readonly ContentControl _host = new();
+
     private EditableConfiguration _editable;
     private Page _page = Page.Home;
-    private bool _strictActive;
+    private AppStatus _status;
 
-    // Editing context
-    private EditableConfiguration.EditableRule? _editingRule;
-    private int _editingIndex = -1;
-    private StackPanel? _editSitesPanel;
+    // Things whose change requires rebuilding the current screen.
+    private bool _shownPaused;
+    private bool _shownStrict;
 
-    // Home live elements (rebuilt per visit)
-    private readonly Dictionary<string, Action<RuleSnapshot?>> _liveUpdaters = new(StringComparer.Ordinal);
-    private Border? _statusDot;
-    private TextBlock? _statusText;
-    private PillButton? _strictButton;
+    // Live elements of the current screen, refreshed on every status tick.
+    private readonly List<Action<AppStatus>> _live = new();
 
     public MainWindow(EnforcementController controller, UiSettingsStore settings, Action<ThemePreference> applyTheme)
     {
@@ -48,45 +48,23 @@ internal sealed class MainWindow : Window
         _settings = settings;
         _applyTheme = applyTheme;
         _editable = controller.GetEditableConfiguration();
+        _status = controller.Status;
 
         Title = "BrainRotDoctor";
-        Width = 980;
-        Height = 680;
-        MinWidth = 760;
-        MinHeight = 560;
+        Width = 1120;
+        Height = 760;
+        MinWidth = 820;
+        MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Inter, $Default");
         this[!BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg);
         Content = _host;
 
-        _strictActive = _controller.Status.StrictMode.IsActive;
-        if (_strictActive)
-        {
-            NavigateStrict();
-        }
-        else
-        {
-            NavigateHome();
-        }
+        Navigate(_status.StrictMode.IsActive ? Page.Strict : Page.Home);
 
         _controller.StatusChanged += OnStatusChanged;
         Loc.Changed += Rerender;
-        ApplyStatus(_controller.Status);
     }
-
-    private void Rerender()
-    {
-        switch (_page)
-        {
-            case Page.Settings: NavigateSettings(); break;
-            case Page.Strict: NavigateStrict(); break;
-            case Page.Edit when _editingRule is not null: NavigateEdit(_editingRule, _editingIndex); break;
-            default: NavigateHome(); break;
-        }
-    }
-
-    private static string DayAbbrev(DayOfWeek day) =>
-        Loc.Culture.DateTimeFormat.AbbreviatedDayNames[(int)day];
 
     public void ShowFromTray()
     {
@@ -101,841 +79,377 @@ internal sealed class MainWindow : Window
         Hide();
     }
 
-    // ---------- Shared chrome ----------
+    // ---------- Navigation ----------
 
-    private Control TopBar(Control left, Control? right = null)
+    private void Navigate(Page page)
     {
-        var grid = new Grid
+        _page = page;
+        Rerender();
+    }
+
+    private void Rerender()
+    {
+        _live.Clear();
+        _shownPaused = _status.IsPaused;
+        _shownStrict = _status.StrictMode.IsActive;
+
+        _host.Content = _page switch
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            Margin = new Thickness(22, 14, 18, 14),
-            VerticalAlignment = VerticalAlignment.Center,
+            Page.Editor when _editingRule is not null => BuildEditor(),
+            Page.AddSites when _editingRule is not null => BuildAddSites(),
+            Page.Strict => WithSidebar(_status.StrictMode.IsActive ? BuildStrictRunning() : BuildStrictSetup()),
+            Page.Settings => WithSidebar(BuildSettings()),
+            _ => WithSidebar(BuildHome()),
         };
-        left.VerticalAlignment = VerticalAlignment.Center;
-        left.HorizontalAlignment = HorizontalAlignment.Left;
-        grid.Children.Add(left);
-        if (right is not null)
+
+        ApplyLive(_status);
+    }
+
+    // ---------- Status ----------
+
+    private void OnStatusChanged(object? sender, AppStatus status) =>
+        Dispatcher.UIThread.Post(() => ApplyStatus(status));
+
+    private void ApplyStatus(AppStatus status)
+    {
+        _status = status;
+        bool strictChanged = status.StrictMode.IsActive != _shownStrict;
+        bool pauseChanged = status.IsPaused != _shownPaused;
+
+        if (strictChanged && status.StrictMode.IsActive && _page is Page.Home)
         {
-            right.VerticalAlignment = VerticalAlignment.Center;
-            right.HorizontalAlignment = HorizontalAlignment.Right;
-            Grid.SetColumn(right, 1);
-            grid.Children.Add(right);
+            Navigate(Page.Strict);
+            return;
         }
+
+        // Editing screens hold unsaved input; never rebuild them under the user.
+        if ((strictChanged || pauseChanged) && _page is not (Page.Editor or Page.AddSites))
+        {
+            Rerender();
+            return;
+        }
+
+        ApplyLive(status);
+    }
+
+    private void ApplyLive(AppStatus status)
+    {
+        foreach (Action<AppStatus> update in _live)
+        {
+            update(status);
+        }
+    }
+
+    // ---------- Sidebar ----------
+
+    private Control WithSidebar(Control content)
+    {
+        var nav = new StackPanel { Spacing = 4 };
+        nav.Children.Add(Brand());
+        nav.Children.Add(NavItem(Icons.Rules, Loc.T("rules"), Page.Home, badge: null));
+        nav.Children.Add(NavItem(Icons.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
+        nav.Children.Add(NavItem(Icons.Settings, Loc.T("settings"), Page.Settings, badge: null));
+
+        Control status = StatusCard();
+        var side = new DockPanel { LastChildFill = false };
+        DockPanel.SetDock(nav, Dock.Top);
+        DockPanel.SetDock(status, Dock.Bottom);
+        side.Children.Add(nav);
+        side.Children.Add(status);
+
+        var sidebar = new Border
+        {
+            Width = 236,
+            Padding = new Thickness(14, 20, 14, 16),
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = side,
+            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Sidebar),
+            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
+        };
+
+        var scroll = new ScrollViewer
+        {
+            Content = new Border { Padding = new Thickness(40, 32, 40, 40), Child = content },
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+
+        var root = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(sidebar, Dock.Left);
+        root.Children.Add(sidebar);
+        root.Children.Add(scroll);
+        return root;
+    }
+
+    private static Control Brand()
+    {
+        var logo = new Border
+        {
+            Width = 32,
+            Height = 32,
+            CornerRadius = new CornerRadius(9),
+            Child = new Border { HorizontalAlignment = HorizontalAlignment.Center, Child = Icons.Make(Icons.Shield, 18, UiTheme.InkText) },
+            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Ink),
+        };
+        StackPanel row = UiTheme.HStack(10, logo, UiTheme.Strong("BrainRotDoctor", 15));
+        row.Margin = new Thickness(8, 2, 8, 20);
+        return row;
+    }
+
+    private Control NavItem(string icon, string text, Page target, string? badge)
+    {
+        bool active = _page == target || (target == Page.Home && _page is Page.Editor or Page.AddSites);
+        var label = UiTheme.Text(text, 14, active ? FontWeight.SemiBold : FontWeight.Medium, active ? UiTheme.TextPrimary : UiTheme.TextSecondary);
+        var row = new DockPanel { LastChildFill = true };
+        Control glyph = Icons.Make(icon, 18, active ? UiTheme.TextPrimary : UiTheme.TextSecondary);
+        glyph.Margin = new Thickness(0, 0, 10, 0);
+        DockPanel.SetDock(glyph, Dock.Left);
+        row.Children.Add(glyph);
+        if (badge is not null)
+        {
+            Border chip = UiTheme.Chip(badge, UiTheme.Ink, UiTheme.InkText);
+            DockPanel.SetDock(chip, Dock.Right);
+            row.Children.Add(chip);
+        }
+
+        row.Children.Add(label);
+
+        var item = new Border
+        {
+            Height = 40,
+            Padding = new Thickness(12, 0),
+            CornerRadius = new CornerRadius(9),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Background = Brushes.Transparent,
+            Child = row,
+        };
+        if (active)
+        {
+            item[!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface);
+        }
+
+        item.AddHandler(Gestures.TappedEvent, (_, _) => Navigate(target));
+        return item;
+    }
+
+    private Control StatusCard()
+    {
+        var dot = UiTheme.Dot(UiTheme.Success);
+        var title = UiTheme.Strong("", 14);
+        var sub = UiTheme.Muted("");
+        var card = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(14),
+            Child = UiTheme.VStack(4, UiTheme.HStack(8, dot, title), sub),
+        };
+
+        _live.Add(status =>
+        {
+            string dotKey;
+            string bg = UiTheme.Surface;
+            string fg = UiTheme.TextPrimary;
+            string subFg = UiTheme.TextSecondary;
+            if (status.StrictMode.IsActive)
+            {
+                (dotKey, bg, fg, subFg) = (UiTheme.InkText, UiTheme.Ink, UiTheme.InkText, UiTheme.InkText);
+                title.Text = Loc.T("strict_mode");
+                sub.Text = Loc.T("time_left", FormatSpan(status.StrictMode.Remaining));
+            }
+            else if (status.Pause is { } pause)
+            {
+                dotKey = UiTheme.Warn;
+                title.Text = Loc.T("paused");
+                sub.Text = PauseUntilText(pause);
+            }
+            else if (status.LastError is not null)
+            {
+                dotKey = UiTheme.Warn;
+                title.Text = Loc.T("attention");
+                sub.Text = status.LastError;
+            }
+            else
+            {
+                dotKey = UiTheme.Success;
+                title.Text = Loc.T("protected");
+                int active = status.Rules.Count(r => r.IsActive);
+                sub.Text = Loc.T("rules_active_now", active, status.Rules.Count);
+            }
+
+            dot[!Border.BackgroundProperty] = UiTheme.Dyn(dotKey);
+            card[!Border.BackgroundProperty] = UiTheme.Dyn(bg);
+            card[!Border.BorderBrushProperty] = UiTheme.Dyn(status.StrictMode.IsActive ? UiTheme.Ink : UiTheme.Border_);
+            title[!TextBlock.ForegroundProperty] = UiTheme.Dyn(fg);
+            sub[!TextBlock.ForegroundProperty] = UiTheme.Dyn(subFg);
+            sub.Opacity = status.StrictMode.IsActive ? 0.75 : 1;
+        });
+
+        return card;
+    }
+
+    // ---------- Shared page chrome ----------
+
+    /// <summary>A page title with an optional subtitle and right-aligned actions that wrap below when narrow.</summary>
+    private static Control PageHeader(string title, string? subtitle, Control? actions)
+    {
+        var text = UiTheme.VStack(6, UiTheme.H1(title));
+        if (subtitle is not null)
+        {
+            TextBlock sub = UiTheme.Muted(subtitle);
+            sub.FontSize = 14;
+            sub.MaxWidth = 640;
+            sub.HorizontalAlignment = HorizontalAlignment.Left;
+            text.Children.Add(sub);
+        }
+
+        if (actions is null)
+        {
+            return text;
+        }
+
+        actions.VerticalAlignment = VerticalAlignment.Bottom;
+        actions.Margin = new Thickness(16, 0, 0, 0);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        grid.Children.Add(text);
+        Grid.SetColumn(actions, 1);
+        grid.Children.Add(actions);
+        return grid;
+    }
+
+    /// <summary>The top bar of a full-window screen: back link, title area, actions.</summary>
+    private static Control FullScreenBar(Control back, Control middle, Control actions)
+    {
+        var divider = new Border { Width = 1, Height = 24, Margin = new Thickness(4, 0, 12, 0), [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Border_) };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
+        grid.Children.Add(back);
+        Grid.SetColumn(divider, 1);
+        grid.Children.Add(divider);
+        middle.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(middle, 2);
+        grid.Children.Add(middle);
+        actions.Margin = new Thickness(12, 0, 0, 0);
+        Grid.SetColumn(actions, 3);
+        grid.Children.Add(actions);
 
         return new Border
         {
-            Child = grid,
+            Padding = new Thickness(24, 12),
             BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = grid,
             [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface),
             [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
         };
     }
 
-    private static Control Section(string label, Control body)
+    private static Control FullScreen(Control bar, Control body)
     {
-        var stack = new StackPanel { Spacing = 10 };
-        stack.Children.Add(UiTheme.SectionLabel(label));
-        stack.Children.Add(body);
-        return stack;
-    }
-
-    private static StackPanel HStack(double spacing, params Control[] children)
-    {
-        var s = new StackPanel { Orientation = Orientation.Horizontal, Spacing = spacing };
-        foreach (Control c in children)
-        {
-            c.VerticalAlignment = VerticalAlignment.Center;
-            s.Children.Add(c);
-        }
-
-        return s;
-    }
-
-    // ---------- Navigation ----------
-
-    private void NavigateHome()
-    {
-        _page = Page.Home;
-        _host.Content = BuildHome();
-        ApplyStatus(_controller.Status);
-    }
-
-    private void NavigateEdit(EditableConfiguration.EditableRule rule, int index)
-    {
-        _page = Page.Edit;
-        _editingRule = rule;
-        _editingIndex = index;
-        _host.Content = BuildEdit(rule);
-    }
-
-    private void NavigateSettings()
-    {
-        _page = Page.Settings;
-        _host.Content = BuildSettings();
-    }
-
-    private void NavigateStrict()
-    {
-        _page = Page.Strict;
-        _host.Content = BuildStrict();
-    }
-
-    // ---------- Home ----------
-
-    private Control BuildHome()
-    {
-        _liveUpdaters.Clear();
-
-        _statusDot = UiTheme.Dot(UiTheme.Success);
-        _statusText = UiTheme.Muted(Loc.T("protected"));
-        var statusChip = new Border
-        {
-            CornerRadius = new CornerRadius(20),
-            Padding = new Thickness(11, 5),
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.SurfaceAlt),
-            Child = HStack(7, _statusDot, _statusText),
-        };
-
-        _strictButton = UiTheme.Ghost(Loc.T("strict_mode"));
-        _strictButton.Click += (_, _) => NavigateStrict();
-
-        var settings = UiTheme.Icon("⚙", Loc.T("settings"));
-        settings.Click += (_, _) => NavigateSettings();
-
-        Control header = TopBar(
-            UiTheme.H1("BrainRotDoctor"),
-            HStack(10, statusChip, _strictButton, settings));
-
-        var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
-        for (int i = 0; i < _editable.Rules.Count; i++)
-        {
-            wrap.Children.Add(BuildRuleCard(_editable.Rules[i], i));
-        }
-
-        wrap.Children.Add(BuildAddTile());
-
-        var body = new ScrollViewer
-        {
-            Padding = new Thickness(22, 20, 14, 20),
-            Content = wrap,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        };
-
-        var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-        root.Children.Add(body);
-        return root;
-    }
-
-    private Control BuildRuleCard(EditableConfiguration.EditableRule rule, int index)
-    {
-        var dot = UiTheme.Dot(UiTheme.TextSecondary);
-        var live = UiTheme.Muted("—");
-        _liveUpdaters[rule.Id] = snapshot => UpdateCardLive(dot, live, rule, snapshot);
-
-        var top = new StackPanel { Spacing = 8 };
-        var name = UiTheme.H2(string.IsNullOrWhiteSpace(rule.Name) ? Loc.T("untitled") : rule.Name);
-        top.Children.Add(name);
-        top.Children.Add(UiTheme.Muted(ConditionSummary(rule)));
-        top.Children.Add(UiTheme.Muted(SitesSummary(rule)));
-
-        Control footer = HStack(7, dot, live);
-        DockPanel.SetDock(footer, Dock.Bottom);
-
-        var content = new DockPanel { LastChildFill = true };
-        content.Children.Add(footer);
-        content.Children.Add(top);
-
-        Border card = UiTheme.Card(content);
-        card.Height = 150;
-
-        var grid = new Grid { Width = 296, Margin = new Thickness(0, 0, 16, 16) };
-        grid.Children.Add(card);
-
-        if (!_strictActive)
-        {
-            var overlay = new Border { Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
-            overlay.AddHandler(Gestures.TappedEvent, (_, _) => NavigateEdit(rule.Clone(), index));
-            grid.Children.Add(overlay);
-        }
-
-        return grid;
-    }
-
-    private Control BuildAddTile()
-    {
-        var label = UiTheme.H2("+  " + Loc.T("new_rule"));
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        label.VerticalAlignment = VerticalAlignment.Center;
-        label[!TextBlock.ForegroundProperty] = UiTheme.Dyn(UiTheme.Accent);
-
-        var card = new Border
-        {
-            Height = 150,
-            CornerRadius = new CornerRadius(14),
-            BorderThickness = new Thickness(1.5),
-            Child = label,
-            // A null background isn't hit-testable, so without this only the text
-            // glyphs would catch the tap; transparent makes the whole card clickable.
-            Background = Brushes.Transparent,
-            Cursor = new Cursor(StandardCursorType.Hand),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Accent),
-        };
-        card.AddHandler(Gestures.TappedEvent, (_, _) => NavigateEdit(NewRule(), -1));
-
-        return new Grid { Width = 296, Margin = new Thickness(0, 0, 16, 16), Children = { card } };
-    }
-
-    private void UpdateCardLive(Border dot, TextBlock text, EditableConfiguration.EditableRule rule, RuleSnapshot? s)
-    {
-        string key;
-        string label;
-        if (s is null || !s.IsActive)
-        {
-            key = UiTheme.TextSecondary;
-            label = rule.AllDay ? Loc.T("idle") : Loc.T("off_hours");
-        }
-        else if (s.IsBlocking)
-        {
-            key = UiTheme.Danger;
-            label = s.BlocksCompletely
-                ? (s.ActiveWindowEndsAt is { } e ? Loc.T("blocked_until", e.ToLocalTime().ToString("HH:mm")) : Loc.T("blocked"))
-                : (s.HourResetsAt is { } r ? Loc.T("used_up_reset", r.ToLocalTime().ToString("HH:mm")) : Loc.T("used_up"));
-        }
-        else
-        {
-            key = s.Remaining.TotalMinutes <= 1 ? UiTheme.Warn : UiTheme.Success;
-            label = Loc.T("time_left", FormatSpan(s.Remaining));
-        }
-
-        dot[!Border.BackgroundProperty] = UiTheme.Dyn(key);
-        text.Text = label;
-    }
-
-    // ---------- Edit ----------
-
-    private Control BuildEdit(EditableConfiguration.EditableRule rule)
-    {
-        var back = UiTheme.Ghost("←  " + Loc.T("back"));
-        back.Click += (_, _) => NavigateHome();
-        var cancel = UiTheme.Ghost(Loc.T("cancel"));
-        cancel.Click += (_, _) => NavigateHome();
-        var save = UiTheme.Primary(Loc.T("save"));
-        save.Click += async (_, _) => await SaveEditingRule();
-
-        // Delete sits with the other returning actions; it confirms then goes back.
-        StackPanel actions;
-        if (_editingIndex >= 0)
-        {
-            int indexToDelete = _editingIndex;
-            var delete = UiTheme.Ghost(Loc.T("delete"));
-            delete.Click += async (_, _) => await DeleteRule(indexToDelete);
-            actions = HStack(10, delete, cancel, save);
-        }
-        else
-        {
-            actions = HStack(10, cancel, save);
-        }
-
-        Control header = TopBar(back, actions);
-
-        var nameBox = new TextBox { Text = rule.Name, Watermark = Loc.T("rule_name"), FontSize = 15, Width = 360, HorizontalAlignment = HorizontalAlignment.Left };
-        nameBox.TextChanged += (_, _) => rule.Name = nameBox.Text ?? "";
-
-        _editSitesPanel = new StackPanel { Spacing = 8 };
-        RebuildEditSites(rule);
-        var addSite = UiTheme.Ghost("+  " + Loc.T("add"));
-        addSite.HorizontalAlignment = HorizontalAlignment.Left;
-        addSite.Click += async (_, _) => await ShowAddPicker(rule);
-        var what = new StackPanel { Spacing = 12, Children = { _editSitesPanel, addSite } };
-
-        // When | What side by side so the whole rule fits without scrolling.
-        var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
-        Control whenCol = Section(Loc.T("when"), BuildWhenEditor(rule));
-        Control whatCol = Section(Loc.T("what_to_block"), what);
-        whatCol.Margin = new Thickness(24, 0, 0, 0);
-        Grid.SetColumn(whatCol, 1);
-        columns.Children.Add(whenCol);
-        columns.Children.Add(whatCol);
-
-        var body = new StackPanel { Spacing = 22 };
-        body.Children.Add(Section(Loc.T("name"), nameBox));
-        body.Children.Add(columns);
-
         var scroll = new ScrollViewer
         {
-            Padding = new Thickness(24, 22, 24, 16),
-            Content = new Border { Child = body, MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left },
+            Content = new Border
+            {
+                Padding = new Thickness(32, 28, 32, 48),
+                MaxWidth = 1280,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = body,
+            },
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
 
         var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
+        DockPanel.SetDock(bar, Dock.Top);
+        root.Children.Add(bar);
         root.Children.Add(scroll);
         return root;
     }
 
-    private Control BuildWhenEditor(EditableConfiguration.EditableRule rule)
+    /// <summary>
+    /// Two columns side by side when the window is wide enough, stacked otherwise.
+    /// <paramref name="fixedWidth"/> sizes the left column, or the right one when
+    /// <paramref name="fixedRight"/> is set; the other takes the rest.
+    /// </summary>
+    private static Control Columns(Control left, Control right, double fixedWidth, double breakpoint, double gap = 24, bool fixedRight = false)
     {
-        // Allowance vs block completely
-        var minutes = NumberBox(rule.AllowanceMinutes, 1, 59);
-        minutes.ValueChanged += (_, _) => rule.AllowanceMinutes = (int)(minutes.Value ?? 5);
-        minutes.IsEnabled = !rule.BlockCompletely;
+        var grid = new Grid();
+        left.VerticalAlignment = VerticalAlignment.Top;
+        right.VerticalAlignment = VerticalAlignment.Top;
+        grid.Children.Add(left);
+        grid.Children.Add(right);
 
-        var allowRadio = new RadioButton { GroupName = "allowance", IsChecked = !rule.BlockCompletely };
-        allowRadio.Content = HStack(8, UiTheme.Body(Loc.T("allow")), minutes, UiTheme.Body(Loc.T("minutes_per_hour")));
-        var blockRadio = new RadioButton { GroupName = "allowance", Content = Loc.T("block_completely"), IsChecked = rule.BlockCompletely, Margin = new Thickness(0, 6, 0, 0) };
-        allowRadio.IsCheckedChanged += (_, _) =>
+        bool? wide = null;
+        void Layout(double width)
         {
-            if (allowRadio.IsChecked == true)
+            bool isWide = width >= breakpoint;
+            if (wide == isWide)
             {
-                rule.BlockCompletely = false;
-                minutes.IsEnabled = true;
-            }
-        };
-        blockRadio.IsCheckedChanged += (_, _) =>
-        {
-            if (blockRadio.IsChecked == true)
-            {
-                rule.BlockCompletely = true;
-                minutes.IsEnabled = false;
-            }
-        };
-
-        // Active window
-        var fromBox = TimeBox(rule.From, t => rule.From = t);
-        var toBox = TimeBox(rule.To, t => rule.To = t);
-        var betweenRow = HStack(8, UiTheme.Body(Loc.T("only_between")), fromBox, UiTheme.Body(Loc.T("and")), toBox);
-        void SetWindowEnabled(bool on) { fromBox.IsEnabled = on; toBox.IsEnabled = on; }
-        SetWindowEnabled(!rule.AllDay);
-
-        var allDayRadio = new RadioButton { GroupName = "active", Content = Loc.T("all_day"), IsChecked = rule.AllDay };
-        var betweenRadio = new RadioButton { GroupName = "active", IsChecked = !rule.AllDay, Content = betweenRow, Margin = new Thickness(0, 6, 0, 0) };
-        allDayRadio.IsCheckedChanged += (_, _) =>
-        {
-            if (allDayRadio.IsChecked == true) { rule.AllDay = true; SetWindowEnabled(false); }
-        };
-        betweenRadio.IsCheckedChanged += (_, _) =>
-        {
-            if (betweenRadio.IsChecked == true) { rule.AllDay = false; SetWindowEnabled(true); }
-        };
-
-        // Days
-        var days = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        for (int i = 0; i < DayOrder.Length; i++)
-        {
-            DayOfWeek day = DayOrder[i];
-            var toggle = new ToggleButton
-            {
-                Content = DayAbbrev(day),
-                IsChecked = rule.Days.Contains(day),
-                Width = 46,
-                Padding = new Thickness(0, 6),
-                FontSize = 11.5,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-                VerticalContentAlignment = VerticalAlignment.Center,
-            };
-            toggle.IsCheckedChanged += (_, _) =>
-            {
-                if (toggle.IsChecked == true) rule.Days.Add(day);
-                else rule.Days.Remove(day);
-            };
-            days.Children.Add(toggle);
-        }
-
-        var card = new StackPanel { Spacing = 16 };
-        card.Children.Add(new StackPanel { Spacing = 0, Children = { allowRadio, blockRadio } });
-        card.Children.Add(new Border { Height = 1, [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Border_) });
-        card.Children.Add(new StackPanel { Spacing = 0, Children = { allDayRadio, betweenRadio } });
-        card.Children.Add(new Border { Height = 1, [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Border_) });
-        card.Children.Add(new StackPanel { Spacing = 8, Children = { UiTheme.Muted(Loc.T("on_these_days")), days } });
-        return UiTheme.Card(card);
-    }
-
-    private void RebuildEditSites(EditableConfiguration.EditableRule rule)
-    {
-        if (_editSitesPanel is null)
-        {
-            return;
-        }
-
-        _editSitesPanel.Children.Clear();
-        if (rule.Sites.Count == 0)
-        {
-            _editSitesPanel.Children.Add(UiTheme.Muted("No sites yet — add the address of a page you want to limit."));
-        }
-
-        foreach (EditableConfiguration.EditableSite site in rule.Sites)
-        {
-            _editSitesPanel.Children.Add(BuildSiteRow(rule, site));
-        }
-    }
-
-    // A target shown by label only. Custom ones can be edited; catalog ones can't.
-    private Control BuildSiteRow(EditableConfiguration.EditableRule rule, EditableConfiguration.EditableSite site)
-    {
-        var label = new TextBlock
-        {
-            Text = site.DisplayLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 13,
-            [!TextBlock.ForegroundProperty] = UiTheme.Dyn(UiTheme.TextPrimary),
-        };
-
-        PillButton del = UiTheme.Icon("✕", Loc.T("remove"));
-        del.Click += (_, _) => { rule.Sites.Remove(site); RebuildEditSites(rule); };
-
-        var inner = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(del, Dock.Right);
-        inner.Children.Add(del);
-
-        if (!site.IsCatalog)
-        {
-            PillButton edit = UiTheme.Icon("✎", Loc.T("edit"));
-            edit.Click += async (_, _) => await ShowCustomSite(rule, site);
-            DockPanel.SetDock(edit, Dock.Right);
-            inner.Children.Add(edit);
-        }
-
-        inner.Children.Add(label);
-
-        return new Border
-        {
-            CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(12, 7, 6, 7),
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.SurfaceAlt),
-            Child = inner,
-        };
-    }
-
-    // ---------- Add picker + custom site dialog ----------
-
-    private async Task ShowAddPicker(EditableConfiguration.EditableRule rule)
-    {
-        var present = rule.Sites.Where(s => s.IsCatalog).Select(s => s.CatalogId!).ToHashSet(StringComparer.Ordinal);
-        var checks = new List<(CatalogEntry Entry, CheckBox Box)>();
-        var list = new StackPanel { Spacing = 2 };
-        foreach (CatalogEntry entry in SiteCatalog.Entries)
-        {
-            bool already = present.Contains(entry.Id);
-            var box = new CheckBox { Content = entry.Label, IsChecked = already, IsEnabled = !already };
-            checks.Add((entry, box));
-            list.Children.Add(box);
-        }
-
-        var custom = UiTheme.Ghost("+  " + Loc.T("custom_website_btn"));
-        custom.HorizontalAlignment = HorizontalAlignment.Left;
-
-        var add = UiTheme.Primary(Loc.T("add"));
-        var cancel = UiTheme.Ghost(Loc.T("cancel"));
-
-        var content = new StackPanel
-        {
-            Margin = new Thickness(22),
-            Spacing = 14,
-            Children =
-            {
-                UiTheme.H2(Loc.T("add_to_block")),
-                new ScrollViewer { MaxHeight = 280, Content = list },
-                custom,
-                ActionsRight(cancel, add),
-            },
-        };
-        Window dialog = Dialogs.Shell(this, Loc.T("add_to_block"), content, 380);
-
-        custom.Click += async (_, _) => { dialog.Close(); await ShowCustomSite(rule, null); };
-        cancel.Click += (_, _) => dialog.Close();
-        add.Click += (_, _) =>
-        {
-            foreach ((CatalogEntry entry, CheckBox box) in checks)
-            {
-                if (box.IsEnabled && box.IsChecked == true)
-                {
-                    rule.Sites.Add(EditableConfiguration.EditableSite.FromCatalog(entry));
-                }
+                return;
             }
 
-            RebuildEditSites(rule);
-            dialog.Close();
-        };
-
-        await dialog.ShowDialog(this);
-    }
-
-    private async Task ShowCustomSite(EditableConfiguration.EditableRule rule, EditableConfiguration.EditableSite? existing)
-    {
-        var label = new TextBox { Text = existing?.Label ?? "", Watermark = Loc.T("label_hint") };
-        var address = new TextBox { Text = existing?.Url ?? "", Watermark = Loc.T("address_hint") };
-        var subpaths = new CheckBox
-        {
-            Content = Loc.T("include_subpaths"),
-            IsChecked = existing?.IncludeSubpaths ?? true,
-        };
-
-        var save = UiTheme.Primary(Loc.T("save"));
-        var cancel = UiTheme.Ghost(Loc.T("cancel"));
-        var content = new StackPanel
-        {
-            Margin = new Thickness(22),
-            Spacing = 14,
-            Children =
+            wide = isWide;
+            grid.ColumnDefinitions.Clear();
+            grid.RowDefinitions.Clear();
+            if (isWide)
             {
-                UiTheme.H2(existing is null ? Loc.T("custom_website") : Loc.T("edit_website")),
-                Field(Loc.T("label"), label),
-                Field(Loc.T("address"), address),
-                subpaths,
-                ActionsRight(cancel, save),
-            },
-        };
-        Window dialog = Dialogs.Shell(this, Loc.T("custom_website"), content, 440);
-
-        cancel.Click += (_, _) => dialog.Close();
-        save.Click += (_, _) =>
-        {
-            if (existing is null)
-            {
-                rule.Sites.Add(new EditableConfiguration.EditableSite
-                {
-                    Label = label.Text ?? "",
-                    Url = address.Text ?? "",
-                    IncludeSubpaths = subpaths.IsChecked == true,
-                });
+                grid.ColumnDefinitions = new ColumnDefinitions(fixedRight ? $"*,{gap},{fixedWidth}" : $"{fixedWidth},{gap},*");
+                Grid.SetColumn(left, 0);
+                Grid.SetRow(left, 0);
+                Grid.SetColumn(right, 2);
+                Grid.SetRow(right, 0);
             }
             else
             {
-                existing.Label = label.Text ?? "";
-                existing.Url = address.Text ?? "";
-                existing.IncludeSubpaths = subpaths.IsChecked == true;
-            }
-
-            RebuildEditSites(rule);
-            dialog.Close();
-        };
-
-        await dialog.ShowDialog(this);
-    }
-
-    private static Control Field(string label, Control input)
-    {
-        var stack = new StackPanel { Spacing = 5 };
-        stack.Children.Add(UiTheme.SectionLabel(label));
-        stack.Children.Add(input);
-        return stack;
-    }
-
-    private static Control ActionsRight(params Control[] buttons)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right };
-        foreach (Control b in buttons)
-        {
-            row.Children.Add(b);
-        }
-
-        return row;
-    }
-
-    private async Task SaveEditingRule()
-    {
-        if (_editingRule is null)
-        {
-            return;
-        }
-
-        EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
-        if (_editingIndex >= 0 && _editingIndex < candidate.Rules.Count)
-        {
-            candidate.Rules[_editingIndex] = _editingRule;
-        }
-        else
-        {
-            candidate.Rules.Add(_editingRule);
-        }
-
-        if (_controller.TrySaveConfiguration(candidate, out string? error))
-        {
-            _editable = _controller.GetEditableConfiguration();
-            NavigateHome();
-            return;
-        }
-
-        await Dialogs.Message(this, Loc.T("couldnt_save"), error ?? Loc.T("rule_invalid"));
-    }
-
-    private async Task DeleteRule(int index)
-    {
-        if (index < 0 || index >= _editable.Rules.Count)
-        {
-            return;
-        }
-
-        if (!await Dialogs.Confirm(this, Loc.T("delete"), Loc.T("delete_rule_q", _editable.Rules[index].Name), Loc.T("delete")))
-        {
-            return;
-        }
-
-        EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
-        candidate.Rules.RemoveAt(index);
-        if (_controller.TrySaveConfiguration(candidate, out string? error))
-        {
-            _editable = _controller.GetEditableConfiguration();
-            NavigateHome();
-            return;
-        }
-
-        await Dialogs.Message(this, Loc.T("couldnt_delete"), error ?? Loc.T("rule_invalid"));
-    }
-
-    private EditableConfiguration.EditableRule NewRule() => new()
-    {
-        Id = NextId(),
-        Name = Loc.T("new_rule"),
-        BlockCompletely = false,
-        AllowanceMinutes = 5,
-        AllDay = true,
-    };
-
-    // ---------- Settings ----------
-
-    private Control BuildSettings()
-    {
-        var back = UiTheme.Ghost("←  " + Loc.T("back"));
-        back.Click += (_, _) => NavigateHome();
-        Control header = TopBar(HStack(12, back, UiTheme.H1(Loc.T("settings"))));
-
-        ThemePreference current = _settings.LoadTheme();
-        var group = new StackPanel { Spacing = 4 };
-        foreach (ThemePreference pref in new[] { ThemePreference.System, ThemePreference.Light, ThemePreference.Dark })
-        {
-            ThemePreference captured = pref;
-            var radio = new RadioButton
-            {
-                GroupName = "theme",
-                Content = pref switch
-                {
-                    ThemePreference.Light => Loc.T("light"),
-                    ThemePreference.Dark => Loc.T("dark"),
-                    _ => Loc.T("follow_system"),
-                },
-                IsChecked = pref == current,
-            };
-            radio.IsCheckedChanged += (_, _) =>
-            {
-                if (radio.IsChecked == true)
-                {
-                    _settings.SaveTheme(captured);
-                    _applyTheme(captured);
-                }
-            };
-            group.Children.Add(radio);
-        }
-
-        // Language: Automatic + every supported language by its native name.
-        string currentLang = _settings.LoadLanguage();
-        var options = new List<string> { Loc.T("automatic") };
-        options.AddRange(Loc.Languages.Select(l => l.Native));
-        var langCombo = new ComboBox { Width = 240, ItemsSource = options };
-        int selected = string.Equals(currentLang, Loc.Auto, StringComparison.OrdinalIgnoreCase)
-            ? 0
-            : Loc.Languages.ToList().FindIndex(l => l.Code == currentLang) is var idx && idx >= 0 ? idx + 1 : 0;
-        langCombo.SelectedIndex = selected;
-        langCombo.SelectionChanged += (_, _) =>
-        {
-            int i = langCombo.SelectedIndex;
-            string pref = i <= 0 ? Loc.Auto : Loc.Languages[i - 1].Code;
-            _settings.SaveLanguage(pref);
-            Loc.SetPreference(pref); // raises Changed -> re-renders this screen
-        };
-
-        var body = new StackPanel { Spacing = 22, Margin = new Thickness(24, 22, 24, 24) };
-        body.Children.Add(Section(Loc.T("appearance"), UiTheme.Card(group)));
-        body.Children.Add(Section(Loc.T("language"), UiTheme.Card(langCombo)));
-
-        var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-        root.Children.Add(body);
-        return root;
-    }
-
-    // ---------- Strict mode (minimal for now) ----------
-
-    private Control BuildStrict()
-    {
-        var back = UiTheme.Ghost("←  " + Loc.T("back"));
-        back.Click += (_, _) => NavigateHome();
-        Control header = TopBar(HStack(12, back, UiTheme.H1(Loc.T("strict_mode"))));
-
-        StrictModeSnapshot strict = _controller.Status.StrictMode;
-        var body = new StackPanel { Spacing = 16, Margin = new Thickness(24, 22, 24, 24), MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
-
-        if (strict.IsActive)
-        {
-            string until = strict.ActiveUntilLocal?.ToString("dddd HH:mm", Loc.Culture) ?? "";
-            body.Children.Add(UiTheme.H2(Loc.T("strict_on")));
-            body.Children.Add(UiTheme.Body(Loc.T("strict_until", until, FormatSpan(strict.Remaining))));
-            body.Children.Add(UiTheme.Muted(Loc.T("strict_note")));
-        }
-        else
-        {
-            body.Children.Add(UiTheme.Body(Loc.T("strict_explain")));
-
-            var amount = NumberBox(2, 1, 999);
-            amount.Width = 90;
-            var unit = new ComboBox { Width = 140, ItemsSource = new[] { Loc.T("minutes"), Loc.T("hours"), Loc.T("days") }, SelectedIndex = 1 };
-            var lockBtn = UiTheme.Primary(Loc.T("lock_in"));
-            lockBtn.Click += async (_, _) =>
-            {
-                int n = (int)(amount.Value ?? 1);
-                TimeSpan d = unit.SelectedIndex switch
-                {
-                    0 => TimeSpan.FromMinutes(n),
-                    2 => TimeSpan.FromDays(n),
-                    _ => TimeSpan.FromHours(n),
-                };
-                if (await Dialogs.StrictConfirm(this, n, (string)unit.SelectedItem!))
-                {
-                    _controller.ActivateStrictMode(d);
-                    NavigateStrict();
-                }
-            };
-
-            body.Children.Add(UiTheme.Card(new StackPanel
-            {
-                Spacing = 14,
-                Children = { HStack(10, UiTheme.Body(Loc.T("for_w")), amount, unit), lockBtn },
-            }));
-        }
-
-        var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-        root.Children.Add(body);
-        return root;
-    }
-
-    // ---------- Status ----------
-
-    private void OnStatusChanged(object? sender, AppStatus status) => Dispatcher.UIThread.Post(() => ApplyStatus(status));
-
-    private void ApplyStatus(AppStatus status)
-    {
-        bool wasStrict = _strictActive;
-        _strictActive = status.StrictMode.IsActive;
-
-        // Strict mode is the landing screen while active.
-        if (_strictActive && !wasStrict && _page != Page.Strict)
-        {
-            NavigateStrict();
-            return;
-        }
-
-        if (_page == Page.Home)
-        {
-            if (_statusDot is not null && _statusText is not null)
-            {
-                bool healthy = status.LastError is null;
-                _statusDot[!Border.BackgroundProperty] = UiTheme.Dyn(healthy ? UiTheme.Success : UiTheme.Warn);
-                _statusText.Text = healthy ? Loc.T("protected") : Loc.T("attention");
-            }
-
-            if (_strictButton is not null)
-            {
-                _strictButton.Text = _strictActive
-                    ? Loc.T("strict_left", FormatSpan(status.StrictMode.Remaining))
-                    : Loc.T("strict_mode");
-            }
-
-            var byId = status.Rules.ToDictionary(r => r.RuleId, r => r, StringComparer.Ordinal);
-            foreach ((string id, Action<RuleSnapshot?> update) in _liveUpdaters)
-            {
-                update(byId.TryGetValue(id, out RuleSnapshot? s) ? s : null);
+                grid.RowDefinitions = new RowDefinitions($"Auto,{gap},Auto");
+                Grid.SetColumn(left, 0);
+                Grid.SetRow(left, 0);
+                Grid.SetColumn(right, 0);
+                Grid.SetRow(right, 2);
             }
         }
+
+        Layout(breakpoint);
+        grid.SizeChanged += (_, e) => Layout(e.NewSize.Width);
+        return grid;
     }
 
-    // ---------- Inputs & dialogs ----------
-
-    private static NumericUpDown NumberBox(int value, int min, int max) => new()
+    /// <summary>A wrap of equal-width tiles whose count per row follows the available width.</summary>
+    private static Control TileGrid(IReadOnlyList<Control> tiles, double minTileWidth, double gap)
     {
-        Value = value,
-        Minimum = min,
-        Maximum = max,
-        Increment = 1,
-        FormatString = "0",
-        ShowButtonSpinner = false,
-        Width = 70,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
-
-    private static TextBox TimeBox(TimeOnly value, Action<TimeOnly> onChanged)
-    {
-        var box = new TextBox { Text = value.ToString("HH:mm"), Width = 70, Watermark = "23:00", VerticalAlignment = VerticalAlignment.Center };
-        box.LostFocus += (_, _) =>
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = gap, LineSpacing = gap };
+        foreach (Control tile in tiles)
         {
-            if (TimeOnly.TryParse(box.Text, out TimeOnly t))
+            wrap.Children.Add(tile);
+        }
+
+        wrap.SizeChanged += (_, e) =>
+        {
+            double width = e.NewSize.Width;
+            int columns = Math.Max(1, (int)((width + gap) / (minTileWidth + gap)));
+            double tileWidth = Math.Floor((width - gap * (columns - 1)) / columns) - 0.5;
+            foreach (Control tile in wrap.Children)
             {
-                onChanged(t);
-                box.Text = t.ToString("HH:mm");
-            }
-            else
-            {
-                box.Text = value.ToString("HH:mm");
+                tile.Width = Math.Max(minTileWidth * 0.6, tileWidth);
             }
         };
-        return box;
+        return wrap;
     }
 
+    // ---------- Formatting ----------
 
-    // ---------- Helpers ----------
+    private static string DayAbbrev(DayOfWeek day) =>
+        Loc.Culture.DateTimeFormat.AbbreviatedDayNames[(int)day];
 
-    private string ConditionSummary(EditableConfiguration.EditableRule rule)
-    {
-        string when = rule.BlockCompletely ? Loc.T("blocked") : Loc.T("min_per_hour", rule.AllowanceMinutes);
-        string active = rule.AllDay ? Loc.T("all_day_low") : $"{rule.From:HH\\:mm}–{rule.To:HH\\:mm}";
-        return $"{when} · {active} · {DaysSummary(rule.Days)}";
-    }
+    private static string Clock(DateTimeOffset time) => time.ToLocalTime().ToString("HH:mm", Loc.Culture);
 
-    private static string SitesSummary(EditableConfiguration.EditableRule rule)
-    {
-        if (rule.Sites.Count == 0)
-        {
-            return Loc.T("no_sites");
-        }
-
-        var labels = rule.Sites
-            .Select(s => s.DisplayLabel)
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .ToList();
-        string head = string.Join(", ", labels.Take(2));
-        return labels.Count > 2 ? $"{head} +{labels.Count - 2}" : head;
-    }
-
-    private static string DaysSummary(ICollection<DayOfWeek> days)
-    {
-        if (days.Count == 7)
-        {
-            return Loc.T("every_day");
-        }
-
-        bool weekdays = new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday }.All(days.Contains) && days.Count == 5;
-        if (weekdays)
-        {
-            return Loc.T("weekdays");
-        }
-
-        if (days.Count == 2 && days.Contains(DayOfWeek.Saturday) && days.Contains(DayOfWeek.Sunday))
-        {
-            return Loc.T("weekends");
-        }
-
-        return string.Join(", ", DayOrder.Where(days.Contains).Select(DayAbbrev));
-    }
+    private string PauseUntilText(PauseState pause) =>
+        pause.UntilUtc is { } until ? Loc.T("resumes_at", Clock(until)) : Loc.T("until_you_resume");
 
     private static string FormatSpan(TimeSpan span)
     {
         (string h, string m, string s) = Loc.DurationUnits();
+        if (span.TotalDays >= 1)
+        {
+            return $"{(int)span.TotalHours} {h}";
+        }
+
         if (span.TotalHours >= 1)
         {
             return $"{(int)span.TotalHours} {h} {span.Minutes} {m}";
@@ -949,16 +463,50 @@ internal sealed class MainWindow : Window
         return $"{Math.Max(0, span.Seconds)} {s}";
     }
 
-    private string NextId()
+    private static string DaysSummary(ICollection<DayOfWeek> days)
     {
-        var existing = _editable.Rules.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
-        for (int i = 1; ; i++)
+        if (days.Count == 7)
         {
-            string candidate = $"rule-{i}";
-            if (!existing.Contains(candidate))
-            {
-                return candidate;
-            }
+            return Loc.T("every_day");
         }
+
+        bool weekdays = days.Count == 5 && DayOrder.Take(5).All(days.Contains);
+        if (weekdays)
+        {
+            return Loc.T("weekdays");
+        }
+
+        if (days.Count == 2 && days.Contains(DayOfWeek.Saturday) && days.Contains(DayOfWeek.Sunday))
+        {
+            return Loc.T("weekends");
+        }
+
+        return string.Join(", ", DayOrder.Where(days.Contains).Select(DayAbbrev));
+    }
+
+    private static string ConditionSummary(EditableConfiguration.EditableRule rule)
+    {
+        string limit = rule.BlockCompletely ? Loc.T("blocked_completely") : Loc.T("min_per_hour", rule.AllowanceMinutes);
+        string active = rule.AllDay ? Loc.T("all_day") : $"{rule.From:HH\\:mm}–{rule.To:HH\\:mm}";
+        return $"{limit} · {active} · {DaysSummary(rule.Days)}";
+    }
+
+    /// <summary>What a site of a rule blocks, in a few words: "Home feed, Explore" or "Whole site".</summary>
+    private static string BlockedSummary(EditableConfiguration.EditableSite site)
+    {
+        if (site.BlockEverythingElse)
+        {
+            int open = site.Pages.Count(p => !p.Block);
+            return open == 0 ? Loc.T("whole_site") : Loc.T("whole_site_except", open);
+        }
+
+        List<string> names = site.Pages.Where(p => p.Block).Select(p => p.Name).ToList();
+        if (names.Count == 0)
+        {
+            return Loc.T("nothing_blocked");
+        }
+
+        string head = string.Join(", ", names.Take(2));
+        return names.Count > 2 ? $"{head} +{names.Count - 2}" : head;
     }
 }

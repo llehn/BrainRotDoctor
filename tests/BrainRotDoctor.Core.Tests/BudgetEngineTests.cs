@@ -12,7 +12,7 @@ public class BudgetEngineTests
 
     private const string Video = "video";
 
-    private static TargetSite Site(string url) => new(url, SiteUrl.ToPattern(url, true));
+    private static TargetSite Site(string url) => TargetSite.FromUrl(url, url, true);
 
     private static BudgetEngine Engine(TimeSpan? allowance = null, TimeSpan? cap = null)
     {

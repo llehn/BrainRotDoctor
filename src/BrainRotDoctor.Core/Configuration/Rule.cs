@@ -99,7 +99,8 @@ public sealed class Rule
 
     public bool WrapsMidnight => !AllDay && To <= From;
 
-    public bool MatchesUrl(Uri uri) => Sites.Any(s => s.Matches(uri));
+    /// <summary>True if one of the rule's sites blocks <paramref name="uri"/>.</summary>
+    public bool MatchesUrl(Uri uri) => Sites.Any(s => s.Blocks(uri));
 
     /// <summary>True if the rule is in effect at <paramref name="now"/>.</summary>
     public bool IsActiveAt(DateTimeOffset now)

@@ -1,77 +1,45 @@
 using BrainRotDoctor.Core.Configuration;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace BrainRotDoctor.App.Runtime;
 
 /// <summary>
 /// The mutable, UI-friendly view of the configuration: a list of rules, each
-/// with the sites it blocks and its "when" condition. Round-trips to and from the
-/// on-disk JSON schema understood by <see cref="ConfigurationLoader"/>.
+/// with the websites it covers (split into pages) and its "when" condition.
+/// Round-trips to and from <see cref="ConfigurationDocument"/>; old-format sites
+/// are upgraded on load.
 /// </summary>
 internal sealed class EditableConfiguration
 {
     private static readonly DayOfWeek[] AllDays = Enum.GetValues<DayOfWeek>();
 
-    private static readonly JsonSerializerOptions ReadOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
     public List<EditableRule> Rules { get; } = new();
 
     public static EditableConfiguration FromJson(string json)
     {
-        ConfigDto dto = JsonSerializer.Deserialize<ConfigDto>(json, ReadOptions) ?? new ConfigDto();
-        var result = new EditableConfiguration();
-        foreach (RuleDto rule in dto.Rules ?? new())
+        ConfigurationDocument document;
+        try
         {
-            result.Rules.Add(EditableRule.FromDto(rule));
+            document = ConfigurationDocument.Parse(json);
+        }
+        catch (ConfigurationException)
+        {
+            document = new ConfigurationDocument();
+        }
+
+        var result = new EditableConfiguration();
+        foreach (RuleDocument rule in document.Rules ?? new())
+        {
+            result.Rules.Add(EditableRule.FromDocument(rule));
         }
 
         return result;
     }
 
-    public string ToJson()
-    {
-        var dto = new ConfigDto { Rules = Rules.Select(r => r.ToDto()).ToList() };
-        return JsonSerializer.Serialize(dto, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        });
-    }
+    public string ToJson() => ToDocument().ToJson();
 
-    public BlockerConfiguration ToBlockerConfiguration() => ConfigurationLoader.Load(ToJson());
+    public ConfigurationDocument ToDocument() => new() { Rules = Rules.Select(r => r.ToDocument()).ToList() };
 
-    internal sealed class ConfigDto
-    {
-        [JsonPropertyName("rules")]
-        public List<RuleDto>? Rules { get; set; }
-    }
-
-    internal sealed class RuleDto
-    {
-        public string? Id { get; set; }
-        public string? Name { get; set; }
-        public int? AllowanceMinutes { get; set; }
-        public bool? AllDay { get; set; }
-        public string? From { get; set; }
-        public string? To { get; set; }
-        public List<string>? Days { get; set; }
-        public List<SiteDto>? Sites { get; set; }
-    }
-
-    internal sealed class SiteDto
-    {
-        public string? CatalogId { get; set; }
-        public string? Label { get; set; }
-        public string? Url { get; set; }
-        public bool? IncludeSubpaths { get; set; }
-    }
+    public BlockerConfiguration ToBlockerConfiguration() => ConfigurationLoader.Load(ToDocument());
 
     internal sealed class EditableRule
     {
@@ -89,34 +57,9 @@ internal sealed class EditableConfiguration
         public List<EditableSite> Sites { get; } = new();
 
         /// <summary>A deep copy, used so the editor can discard unsaved changes.</summary>
-        internal EditableRule Clone()
-        {
-            var copy = new EditableRule
-            {
-                Id = Id,
-                Name = Name,
-                BlockCompletely = BlockCompletely,
-                AllowanceMinutes = AllowanceMinutes,
-                AllDay = AllDay,
-                From = From,
-                To = To,
-                Days = new HashSet<DayOfWeek>(Days),
-            };
-            foreach (EditableSite site in Sites)
-            {
-                copy.Sites.Add(new EditableSite
-                {
-                    CatalogId = site.CatalogId,
-                    Label = site.Label,
-                    Url = site.Url,
-                    IncludeSubpaths = site.IncludeSubpaths,
-                });
-            }
+        internal EditableRule Clone() => FromDocument(ToDocument());
 
-            return copy;
-        }
-
-        internal static EditableRule FromDto(RuleDto dto)
+        internal static EditableRule FromDocument(RuleDocument dto)
         {
             var rule = new EditableRule
             {
@@ -130,21 +73,25 @@ internal sealed class EditableConfiguration
                 Days = ParseDays(dto.Days),
             };
 
-            foreach (SiteDto site in dto.Sites ?? new())
+            List<SiteDocument> sites;
+            try
             {
-                rule.Sites.Add(new EditableSite
-                {
-                    CatalogId = site.CatalogId,
-                    Label = site.Label ?? site.Url ?? "",
-                    Url = site.Url ?? "",
-                    IncludeSubpaths = site.IncludeSubpaths ?? true,
-                });
+                sites = SiteMigration.Migrate(dto.Sites, rule.Id);
+            }
+            catch (ConfigurationException)
+            {
+                sites = (dto.Sites ?? new()).Where(s => !s.IsLegacy).ToList();
+            }
+
+            foreach (SiteDocument site in sites)
+            {
+                rule.Sites.Add(EditableSite.FromDocument(site));
             }
 
             return rule;
         }
 
-        internal RuleDto ToDto() => new()
+        internal RuleDocument ToDocument() => new()
         {
             Id = Id.Trim(),
             Name = Name.Trim(),
@@ -155,11 +102,14 @@ internal sealed class EditableConfiguration
             Days = Days.Count == AllDays.Length
                 ? null
                 : AllDays.Where(Days.Contains).Select(d => d.ToString()).ToList(),
-            Sites = Sites.Select(s => s.ToDto()).ToList(),
+            Sites = Sites.Select(s => s.ToDocument()).ToList(),
         };
 
+        /// <summary>The validated rule, for checking an address against unsaved edits.</summary>
+        internal Rule ToRule() => ConfigurationLoader.MapRule(ToDocument());
+
         private static TimeOnly ParseTime(string? text, TimeOnly fallback)
-            => TimeOnly.TryParse(text, out TimeOnly t) ? t : fallback;
+            => TimeOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out TimeOnly t) ? t : fallback;
 
         private static HashSet<DayOfWeek> ParseDays(List<string>? days)
         {
@@ -181,32 +131,90 @@ internal sealed class EditableConfiguration
         }
     }
 
+    /// <summary>One website in a rule: its pages and what happens to everything else.</summary>
     internal sealed class EditableSite
     {
         public string? CatalogId { get; set; }
         public string Label { get; set; } = "";
-        public string Url { get; set; } = "";
-        public bool IncludeSubpaths { get; set; } = true;
+        public string Host { get; set; } = "";
+        public bool BlockEverythingElse { get; set; }
+        public List<EditablePage> Pages { get; } = new();
 
-        /// <summary>True for built-in catalog picks (label fixed, URL not editable).</summary>
-        public bool IsCatalog => !string.IsNullOrWhiteSpace(CatalogId);
+        public string DisplayLabel => string.IsNullOrWhiteSpace(Label) ? Host : Label;
 
-        /// <summary>The label to show: canonical catalog label, or the custom label.</summary>
-        public string DisplayLabel =>
-            CatalogId is { } id && SiteCatalog.TryGet(id, out CatalogEntry entry)
-                ? entry.Label
-                : (string.IsNullOrWhiteSpace(Label) ? Url : Label);
-
-        internal SiteDto ToDto() => IsCatalog
-            ? new SiteDto { CatalogId = CatalogId }
-            : new SiteDto { Label = Label.Trim(), Url = Url.Trim(), IncludeSubpaths = IncludeSubpaths };
-
-        public static EditableSite FromCatalog(CatalogEntry entry) => new()
+        internal static EditableSite FromDocument(SiteDocument dto)
         {
-            CatalogId = entry.Id,
-            Label = entry.Label,
-            Url = entry.Url,
-            IncludeSubpaths = entry.IncludeSubpaths,
+            var site = new EditableSite
+            {
+                CatalogId = dto.CatalogId,
+                Label = dto.Label ?? dto.Host ?? "",
+                Host = dto.Host ?? "",
+                BlockEverythingElse = IsBlock(dto.EverythingElse, defaultBlock: false),
+            };
+
+            foreach (PageDocument page in dto.Pages ?? new())
+            {
+                site.Pages.Add(new EditablePage
+                {
+                    Name = page.Name ?? "",
+                    Path = page.Path ?? "/",
+                    Match = SafeMatch(page.Match),
+                    Block = IsBlock(page.Action, defaultBlock: true),
+                    Conditions = (page.Query ?? new()).Select(q => new EditableCondition(q.Key, q.Value)).ToList(),
+                });
+            }
+
+            return site;
+        }
+
+        internal SiteDocument ToDocument() => new()
+        {
+            CatalogId = string.IsNullOrWhiteSpace(CatalogId) ? null : CatalogId,
+            Label = Label.Trim(),
+            Host = SiteUrl.NormalizeHost(Host),
+            EverythingElse = BlockEverythingElse ? SiteDocument.Block : SiteDocument.Allow,
+            Pages = Pages.Select(p => new PageDocument
+            {
+                Name = p.Name.Trim(),
+                Path = SitePage.NormalizePath(p.Path),
+                Match = PageDocument.MatchText(p.Match),
+                Query = p.Conditions.Count == 0
+                    ? null
+                    : p.Conditions.Where(c => !string.IsNullOrWhiteSpace(c.Key))
+                        .GroupBy(c => c.Key.Trim())
+                        .ToDictionary(g => g.Key, g => g.First().Value.Trim()),
+                Action = p.Block ? SiteDocument.Block : SiteDocument.Allow,
+            }).ToList(),
         };
+
+        internal TargetSite ToTargetSite() => ConfigurationLoader.MapSite(ToDocument());
+
+        public static EditableSite FromCatalog(CatalogSite site) => FromDocument(site.ToDocument());
+
+        private static bool IsBlock(string? action, bool defaultBlock) =>
+            string.IsNullOrWhiteSpace(action) ? defaultBlock : string.Equals(action.Trim(), SiteDocument.Block, StringComparison.OrdinalIgnoreCase);
+
+        private static PageMatch SafeMatch(string? text)
+        {
+            try
+            {
+                return PageDocument.ParseMatch(text);
+            }
+            catch (ConfigurationException)
+            {
+                return PageMatch.Under;
+            }
+        }
     }
+
+    internal sealed class EditablePage
+    {
+        public string Name { get; set; } = "";
+        public string Path { get; set; } = "/";
+        public PageMatch Match { get; set; } = PageMatch.Under;
+        public bool Block { get; set; } = true;
+        public List<EditableCondition> Conditions { get; set; } = new();
+    }
+
+    internal sealed record EditableCondition(string Key, string Value);
 }

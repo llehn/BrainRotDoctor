@@ -22,6 +22,15 @@ public class ShippedConfigTests
         Assert.NotEmpty(config.Rules);
     }
 
+    [Fact]
+    public void Shipped_config_is_the_in_code_default()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "config", "default-config.json");
+        string shipped = ConfigurationDocument.Parse(File.ReadAllText(path)).ToJson();
+        string inCode = DefaultConfiguration.CreateDocument("Short video", "Feeds").ToJson();
+        Assert.Equal(inCode, shipped);
+    }
+
     [Theory]
     [InlineData("https://www.youtube.com/shorts/x")]
     [InlineData("https://instagram.com/reels/x")]
@@ -34,6 +43,7 @@ public class ShippedConfigTests
 
     [Theory]
     [InlineData("https://instagram.com/direct/inbox")]
+    [InlineData("https://www.instagram.com/?variant=following")]
     [InlineData("https://www.youtube.com/watch?v=x")]
     public void Shipped_config_leaves_useful_surfaces_alone(string url)
     {

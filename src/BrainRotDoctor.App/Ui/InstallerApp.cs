@@ -22,7 +22,7 @@ internal sealed class InstallerApp : Application
     public override void Initialize()
     {
         Loc.Initialize(Loc.Auto); // pre-install: follow the Windows language
-        Styles.Add(new FluentTheme());
+        Styles.Add(UiTheme.BuildFluentTheme());
         Styles.Add(UiTheme.BuildStyles());
         Resources.MergedDictionaries.Add(UiTheme.BuildPalette());
     }

@@ -66,10 +66,61 @@ public sealed class EditableConfigurationTests
         }
         """);
 
-        editable.Rules[0].Sites[0].Url = "tiktok.com/foryou";
+        EditableConfiguration.EditableSite site = editable.Rules[0].Sites[0];
+        site.Host = "tiktok.com";
+        site.Pages[0].Path = "foryou/";
 
         BlockerConfiguration blocker = editable.ToBlockerConfiguration();
         Assert.NotEmpty(blocker.MatchingRules(new Uri("https://tiktok.com/foryou/x")));
         Assert.Empty(blocker.MatchingRules(new Uri("https://instagram.com/reels/x")));
+    }
+
+    [Fact]
+    public void Old_catalog_picks_are_upgraded_to_pages_and_saved_in_the_new_format()
+    {
+        EditableConfiguration editable = EditableConfiguration.FromJson("""
+        { "rules": [ { "id": "feeds", "name": "Feeds", "allowanceMinutes": 5, "allDay": true,
+            "sites": [ { "catalogId": "ig-feed" } ] } ] }
+        """);
+
+        EditableConfiguration.EditableSite instagram = Assert.Single(editable.Rules[0].Sites);
+        Assert.Equal("instagram.com", instagram.Host);
+        Assert.Equal(new[] { "Home feed" }, instagram.Pages.Where(p => p.Block).Select(p => p.Name));
+        Assert.DoesNotContain("ig-feed", editable.ToJson());
+
+        BlockerConfiguration blocker = EditableConfiguration.FromJson(editable.ToJson()).ToBlockerConfiguration();
+        Assert.NotEmpty(blocker.MatchingRules(new Uri("https://www.instagram.com/")));
+        Assert.Empty(blocker.MatchingRules(new Uri("https://www.instagram.com/?variant=following")));
+    }
+
+    [Fact]
+    public void Page_edits_round_trip_including_conditions_and_everything_else()
+    {
+        EditableConfiguration editable = EditableConfiguration.FromJson("""{ "rules": [] }""");
+        var rule = new EditableConfiguration.EditableRule { Id = "r", Name = "R" };
+        var site = new EditableConfiguration.EditableSite { Label = "News", Host = "www.News.example", BlockEverythingElse = true };
+        site.Pages.Add(new EditableConfiguration.EditablePage
+        {
+            Name = "Sport",
+            Path = "/sport",
+            Match = PageMatch.Exact,
+            Block = false,
+            Conditions = { new EditableConfiguration.EditableCondition("tab", "live") },
+        });
+        rule.Sites.Add(site);
+        editable.Rules.Add(rule);
+
+        EditableConfiguration reloaded = EditableConfiguration.FromJson(editable.ToJson());
+        EditableConfiguration.EditableSite back = Assert.Single(Assert.Single(reloaded.Rules).Sites);
+        Assert.Equal("news.example", back.Host);
+        Assert.True(back.BlockEverythingElse);
+        EditableConfiguration.EditablePage page = Assert.Single(back.Pages);
+        Assert.Equal(PageMatch.Exact, page.Match);
+        Assert.False(page.Block);
+        Assert.Equal(new EditableConfiguration.EditableCondition("tab", "live"), Assert.Single(page.Conditions));
+
+        Rule compiled = reloaded.Rules[0].ToRule();
+        Assert.False(compiled.MatchesUrl(new Uri("https://news.example/sport?tab=live")));
+        Assert.True(compiled.MatchesUrl(new Uri("https://news.example/sport")));
     }
 }

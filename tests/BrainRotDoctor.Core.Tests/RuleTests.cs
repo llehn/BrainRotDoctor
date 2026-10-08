@@ -9,7 +9,7 @@ public class RuleTests
         => new(new DateTime(y, m, d, h, min, 0, DateTimeKind.Local));
 
     private static TargetSite Site(string url, bool sub = true)
-        => new(url, SiteUrl.ToPattern(url, sub));
+        => TargetSite.FromUrl(url, url, sub);
 
     private static Rule Rule(
         TimeSpan? allowance = null,

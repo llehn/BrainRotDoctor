@@ -12,6 +12,7 @@ internal sealed class AppStatus
         IReadOnlyList<RuleSnapshot> rules,
         IReadOnlyList<CloseEvent> recentClosures,
         StrictModeSnapshot strictMode,
+        PauseState? pause,
         string? lastError)
     {
         UpdatedAt = updatedAt;
@@ -21,8 +22,14 @@ internal sealed class AppStatus
         Rules = rules;
         RecentClosures = recentClosures;
         StrictMode = strictMode;
+        Pause = pause is not null && pause.IsActiveAt(updatedAt) ? pause : null;
         LastError = lastError;
     }
+
+    /// <summary>The active pause, or null while blocking runs normally.</summary>
+    public PauseState? Pause { get; }
+
+    public bool IsPaused => Pause is not null;
 
     public DateTimeOffset UpdatedAt { get; }
     public bool IsRunning { get; }
