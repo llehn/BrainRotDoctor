@@ -38,7 +38,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         var handles = new List<IntPtr>();
         NativeMethods.EnumWindows((hWnd, lParam) =>
         {
-            if (NativeMethods.IsWindowVisible(hWnd) && TryGetBrowserName(hWnd, out string? _))
+            if (NativeMethods.IsOnScreen(hWnd) && TryGetBrowserName(hWnd, out string? _))
             {
                 handles.Add(hWnd);
             }

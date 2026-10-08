@@ -31,8 +31,9 @@ the site is blocked if any active rule blocks it.
 The Windows enforcement app (`src/BrainRotDoctor.App`) is a modern **Avalonia**
 desktop app (light/dark theming) that observes selected tabs in supported
 browser windows through Windows UI Automation, accounts time against the rules,
-and closes the selected tab with Ctrl+W when a rule blocks it. It has been
-live-tested locally against Firefox, Chrome, and Edge.
+and closes the selected tab when a rule blocks it — without stealing focus or
+moving the window (ADR-010, ADR-011). It has been live-tested locally against
+Firefox, Chrome, and Edge.
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. Normal startup also registers the app in the
@@ -444,7 +445,7 @@ remain usable unless explicitly configured otherwise.
 
 When a budget group is exhausted:
 
-- Every open supported browser window is checked.
+- Every on-screen supported browser window is checked (ADR-010).
 - If a window's selected tab/current page matches a rule assigned to the
   exhausted budget, that selected tab is closed.
 - The whole browser window is not closed unless the browser itself closes the
@@ -492,7 +493,7 @@ ruleset must be configurable.
 
 ### ADR-005: Selected Tabs of Open Windows Consume Budget
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR-010 (only on-screen windows count)
 - **Date:** 2026-06-06
 
 #### Context
@@ -832,6 +833,125 @@ bypass), and the existing watchdog (ADR-008 lineage) respawns the primary within
 - Verifier, manifest parsing, and the no-downgrade/staging decision are unit
   tested with an ephemeral key; the CI signer and embedded public key are
   cross-checked to use the same DER/SHA-256 format.
+
+### ADR-010: Only On-Screen Browser Windows Count
+
+- **Status:** Accepted
+- **Date:** 2026-10-08
+- **Amends:** ADR-004 (closing), ADR-005 (accounting)
+
+#### Context
+
+ADR-005 counts the selected tab of *every* open browser window. In practice that
+included minimized windows and windows on other virtual desktops. This was
+inconsistent with ADR-005's own reasoning: a non-selected tab does not count
+because it is not the surface being watched, yet a minimized window — equally
+unwatchable — did count.
+
+It also made closing disruptive. To close a tab in such a window the app had to
+bring it back first: restoring a minimized window also un-snapped snapped windows
+(Windows Snap layouts), and activating a window on another virtual desktop
+switched the user to that desktop.
+
+#### Decision
+
+A browser window takes part in accounting and closing only while it is on the
+user's current screen:
+
+- **Counts:** shown, not minimized, and on the current virtual desktop — whether
+  focused, in the background, snapped, or covered by other windows.
+- **Does not count:** minimized windows and windows on another virtual desktop.
+  Their selected tab neither consumes budget nor is closed. When the window comes
+  back on screen it counts again; if its budget is exhausted it is closed on the
+  next check.
+- Closing never restores, moves, or re-sizes a window. It only acts on windows
+  already on screen, so snapped/maximized layouts and the current desktop are
+  left untouched.
+
+All other ADR-005 rules (selected tab only, background windows count, time not
+multiplied by windows, prefer blocking over complex detection) are unchanged.
+
+#### Rejected Alternatives
+
+**Keep counting minimized/other-desktop windows, and only restore when needed**
+
+Rejected because it keeps the inconsistency with non-selected tabs and still has
+to restore or switch desktops to close, which disrupts the user's layout.
+
+**Count only windows that are actually unobstructed**
+
+Rejected because occlusion detection is fragile and complex; ADR-005 prefers the
+simple model and blocking in doubt. A covered window is one click away and still
+counts.
+
+#### Consequences
+
+- Minimizing a window or moving it to another desktop pauses its consumption.
+  Accepted: it cannot be scrolled there, and audio from a background tab is
+  already not counted either.
+- Closing is less intrusive: no un-snapping, no desktop switching.
+- A window minimized between observation and closing is skipped and re-evaluated
+  on the next check.
+
+### ADR-011: Close Tabs Without Stealing Focus
+
+- **Status:** Accepted
+- **Date:** 2026-10-08
+
+#### Context
+
+The app closed a tab by bringing the browser window to the front and typing a
+global Ctrl+W. Windows' foreground lock refuses that request from a background
+program whenever another app is in front, so for any browser window that was not
+already in front, Ctrl+W landed in whatever the user was using (closing their
+current tab or editor file). Forcing the window forward instead would steal the
+user's focus mid-typing, which is unacceptable.
+
+Live tests on Firefox, Chrome, and Edge with background windows showed:
+
+- Posting plain key messages to the browser window does nothing: browsers read
+  modifier keys from their own keyboard state, not from the message.
+- Posting Ctrl+W while the browser thread's keyboard state marks Ctrl as held
+  closes the tab in all three, with no focus change and no window movement.
+- Pressing the tab's own close button through UI Automation also works in all
+  three, but every browser then brings its window to the front by itself; focus
+  can be handed back within ~20–75 ms.
+
+#### Decision
+
+- **Primary:** post Ctrl+W directly to the target browser window while its thread
+  sees Ctrl as held. Ctrl is held only until the window reacts (title change or
+  window closed), capped at 250 ms, and only the faked bits are released.
+- **Fallback:** if a keyboard attempt showed no effect and the same window still
+  shows a blocked page on the next check, press the selected tab's close button
+  via UI Automation (matched by class, not localized name) and immediately hand
+  focus back to the window the user was using.
+- No global keystrokes are ever sent, so nothing can land in another app.
+
+#### Rejected Alternatives
+
+**Bring the window forward, then type Ctrl+W (previous behavior)**
+
+Rejected: fails under the foreground lock and misdirects Ctrl+W into the user's
+app; forcing it through would steal focus.
+
+**Close button only**
+
+Rejected as the primary path because every press makes the browser grab focus,
+even if only for a moment.
+
+**Posting plain key messages**
+
+Rejected: browsers ignore the Ctrl modifier, so it does nothing.
+
+#### Consequences
+
+- Closing a tab in a background window no longer interrupts the user.
+- The primary path relies on how browsers read modifier state; it is verified on
+  current Firefox, Chrome, and Edge, and the close-button fallback covers a
+  future browser that stops honoring it.
+- For the brief hold, a key the user types into that same browser could be read
+  as a Ctrl shortcut. The hold ends as soon as the tab closes to keep this rare.
 
 ## Contributing, License, and Security
 
