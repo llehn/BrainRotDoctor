@@ -49,6 +49,24 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         return result;
     }
 
+    public Uri? ReadSelectedUrl(IntPtr windowHandle)
+    {
+        if (!NativeMethods.IsWindow(windowHandle)
+            || !NativeMethods.IsOnScreen(windowHandle)
+            || !TryGetBrowserName(windowHandle, out string? browserName))
+        {
+            return null;
+        }
+
+        if (!_trackers.TryGetValue(windowHandle, out AddressBarTracker? tracker))
+        {
+            tracker = new AddressBarTracker();
+            _trackers[windowHandle] = tracker;
+        }
+
+        return TryReadUrl(windowHandle, browserName!, tracker, windowHandle == NativeMethods.GetForegroundWindow());
+    }
+
     private static IEnumerable<IntPtr> EnumerateBrowserWindows()
     {
         var handles = new List<IntPtr>();

@@ -112,6 +112,24 @@ public sealed class BudgetEngine
         return new TickResult(decisions, BuildSnapshots(now, affected));
     }
 
+    /// <summary>
+    /// The rule that blocks <paramref name="url"/> right now, without advancing time or
+    /// charging anything; null when the page may stay open.
+    /// </summary>
+    public string? BlockingRuleFor(Uri url, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        foreach (Rule rule in _configuration.MatchingRules(url))
+        {
+            if (_states[rule.Id].IsBlocking(now))
+            {
+                return rule.Id;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Current state of every rule without advancing time.</summary>
     public IReadOnlyList<RuleSnapshot> GetRuleSnapshots(DateTimeOffset now)
         => BuildSnapshots(now, activeRules: null);

@@ -83,6 +83,8 @@ internal static class UiSnapshots
     {
         public IReadOnlyList<ObservedBrowserWindow> GetSelectedTabs() => Array.Empty<ObservedBrowserWindow>();
 
+        public Uri? ReadSelectedUrl(IntPtr windowHandle) => null;
+
         public bool CloseSelectedTab(IntPtr windowHandle) => false;
     }
 

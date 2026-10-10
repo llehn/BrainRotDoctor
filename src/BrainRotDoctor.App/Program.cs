@@ -40,6 +40,18 @@ internal static class Program
             UiSnapshots.Run(snapshotDir, args);
             return;
         }
+
+        if (TryGetOption(args, "--scene-frames", "--scene-frames") is { } framesPath)
+        {
+            Ui.Scene.SceneFrames.Run(framesPath, TryGetOption(args, "--times", "--times"));
+            return;
+        }
+
+        if (HasFlag(args, "--scene-preview"))
+        {
+            Ui.Scene.SceneFrames.Preview(int.TryParse(TryGetOption(args, "--scene-preview", "--scene-preview"), out int times) ? times : 1, args);
+            return;
+        }
 #endif
 
         string currentExe = Environment.ProcessPath

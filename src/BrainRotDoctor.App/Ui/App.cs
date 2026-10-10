@@ -3,7 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
+using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
+using BrainRotDoctor.App.Ui.Scene;
 
 namespace BrainRotDoctor.App.Ui;
 
@@ -12,7 +14,7 @@ internal sealed class App : Application
 {
     private readonly EnforcementController _controller;
     private readonly UiSettingsStore _settings;
-    private readonly ToastNotifier _toasts = new();
+    private readonly WormScene _scene = new(new ExtractionScript());
     private MainWindow? _window;
 
     public App(EnforcementController controller, UiSettingsStore settings)
@@ -56,25 +58,53 @@ internal sealed class App : Application
 
             desktop.MainWindow = _window;
 
-            _controller.TabClosed += OnTabClosed;
+            // Build the scene's drawings and its sound while idle, so the first block plays without a hitch.
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    _scene.Prepare();
+                    PlopSound.Prepare();
+                },
+                DispatcherPriority.Background);
+            _controller.BlockSceneStarting += (_, scene) => Dispatcher.UIThread.Post(() => Play(scene));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private void OnTabClosed(object? sender, CloseEvent e)
+    /// <summary>Plays the worm scene for tabs due to close; they close on the pop.</summary>
+    private void Play(BlockScene due)
     {
-        string host = e.Url.Host;
-        if (host.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            host = host[4..];
+            var overlay = new SceneOverlay(_scene, ExtractionScript.PopAt, ScreenPointOf(due));
+            overlay.Popped += (_, _) =>
+            {
+                PlopSound.Play();
+                _controller.ClosePendingTabs(due.Id);
+            };
+            overlay.Finished += (_, _) => _controller.EndScene(due.Id);
+            overlay.Start();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Without the scene the tabs still close.
+            _controller.ClosePendingTabs(due.Id);
+            _controller.EndScene(due.Id);
+        }
+    }
+
+    /// <summary>The middle of the first blocked browser window, so the scene plays on that screen.</summary>
+    private static PixelPoint? ScreenPointOf(BlockScene due)
+    {
+        foreach (ObservedBrowserWindow window in due.Windows)
+        {
+            if (NativeMethods.GetWindowRect(window.WindowHandle, out NativeMethods.RECT r))
+            {
+                return new PixelPoint((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
+            }
         }
 
-        string message = string.IsNullOrWhiteSpace(host)
-            ? "Closed a brain-rot tab — back to it."
-            : $"Closed a brain-rot tab on {host}.";
-
-        // ToastNotifier marshals onto the UI thread; this fires on the enforcement thread.
-        _toasts.Show("Worm extracted \U0001FAB1", message);
+        return null;
     }
 }

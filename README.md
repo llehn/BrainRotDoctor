@@ -33,7 +33,9 @@ desktop app (light/dark theming) that observes selected tabs in supported
 browser windows through Windows UI Automation, accounts time against the rules,
 and closes the selected tab when a rule blocks it — without stealing focus or
 moving the window (ADR-010, ADR-011). It has been live-tested locally against
-Firefox, Chrome, and Edge.
+Firefox, Chrome, and Edge. A blocked tab does not vanish without warning: a short
+animated scene plays in the screen corner (a doctor pulls a worm out of a brain)
+and the tab closes the moment the worm pops out, about three seconds in (ADR-012).
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. Normal startup also registers the app in the
@@ -90,6 +92,11 @@ auto-updater:
 ```sh
 dotnet run --project src/BrainRotDoctor.App -- --no-install-prompt --no-watchdog --no-startup --no-update
 ```
+
+Debug builds can show the worm scene on its own: `--scene-preview [count]` plays
+it in the screen corner, and `--scene-frames out.png [--times 0.5,2.0,…]` renders
+frames at the given seconds (twice real size) for side-by-side comparison with
+the design.
 
 ### Releases and silent auto-update
 
@@ -952,6 +959,72 @@ Rejected: browsers ignore the Ctrl modifier, so it does nothing.
   future browser that stops honoring it.
 - For the brief hold, a key the user types into that same browser could be read
   as a Ctrl shortcut. The hold ends as soon as the tab closes to keep this rare.
+
+### ADR-012: The Tab Closes on the Worm Scene's Pop
+
+- **Status:** Accepted
+- **Date:** 2026-10-10
+
+#### Context
+
+A blocked tab used to close instantly, followed by a text notification. The
+approved design replaces that with a four-second scene in the bottom-right corner
+of the screen: an infested brain rises, a doctor pulls the worm out, and the tab
+closes exactly when the worm pops out (3.0 s). The seconds before the pop are the
+user's last warning (a warning sound at the start is planned). The scene must look
+like the approved design and stay sharp at every Windows zoom level and on every
+monitor.
+
+#### Decision
+
+- **Delayed close, same rules.** When a rule blocks the selected tab, the scene
+  starts instead of the close. On the pop the app closes that window's selected
+  tab only if it still shows a blocked page (any page of a blocking rule, so
+  swiping to the next short still counts). If the user switched away, nothing is
+  closed — never a different tab. Which tabs are closed is unchanged; only the
+  moment moves.
+- **One scene at a time.** Windows blocked in the same check share one scene and
+  close on its pop. While a scene plays, new blocks wait; a blocked page still
+  open afterwards starts the next scene.
+- **Safety nets.** If the scene cannot be shown, the tabs close at once; if it
+  never reports its pop, they close after five seconds.
+- **Drawn live as flat 2D shapes.** The design was prototyped with a 3D library,
+  but its view and light never move, so every part is drawn directly as flat
+  outlines and tone steps, computed from the design's own geometry, colours and
+  timing. The brain's fold pattern is regenerated from the design's seeds.
+  Frames are compared with the design's frames at the same moments.
+- **Painted on the processor, shown as a layered window.** Each frame is painted
+  at exactly the screen's pixels (a few milliseconds) and handed to Windows as a
+  layered, click-through, never-activating overlay, at 60 frames a second.
+- **Actors and scripts.** Brain, worm and doctor are actors with their own moves;
+  a script decides who does what when. Future endings (the user gives up the tab,
+  or dodges to another tab) are new scripts reusing the same actors.
+
+#### Rejected Alternatives
+
+**A recorded animation**
+
+Rejected: a recording is sharp only at the size it was made; at 200% zoom or on a
+4K monitor it is blurry, and recording for the largest size makes the app much
+bigger.
+
+**Running the design page in an embedded browser**
+
+Rejected: starts a hidden browser on every block (memory, delay before the first
+frame) and makes a see-through, focus-free overlay fiddly.
+
+**An ordinary Avalonia window**
+
+Rejected after measurement: on a machine with an extra virtual display adapter,
+the default graphics path redrew such a window only about four times a second,
+and the graphics card was slow at filling the scene's many fine outlines.
+
+#### Consequences
+
+- The user sees the block coming and has about three seconds before the tab goes.
+- The scene has no words, so the closed site's name is no longer shown anywhere
+  (the user was just on it).
+- The pop sound plays through Windows and follows the system volume and mute.
 
 ## Contributing, License, and Security
 

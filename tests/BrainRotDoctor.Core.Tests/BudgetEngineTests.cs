@@ -89,6 +89,21 @@ public class BudgetEngineTests
     }
 
     [Fact]
+    public void Blocking_rule_is_reported_for_any_page_of_an_exhausted_rule_without_charging()
+    {
+        var engine = Engine(allowance: TimeSpan.FromSeconds(10));
+        engine.Tick(Windows(Win("w1", Shorts)), T0);
+        Assert.Null(engine.BlockingRuleFor(new Uri(Shorts), T0 + TimeSpan.FromSeconds(5)));
+
+        engine.Tick(Windows(Win("w1", Shorts)), T0 + TimeSpan.FromSeconds(10));
+
+        // Swiping to the next short changes the address; it is still blocked.
+        Assert.Equal(Video, engine.BlockingRuleFor(new Uri("https://youtube.com/shorts/next"), T0 + TimeSpan.FromSeconds(13)));
+        Assert.Null(engine.BlockingRuleFor(new Uri(IgDirect), T0 + TimeSpan.FromSeconds(13)));
+        Assert.Equal(TimeSpan.FromSeconds(10), Consumed(engine.Tick(Windows(), T0 + TimeSpan.FromSeconds(14))));
+    }
+
+    [Fact]
     public void Reopened_surface_is_closed_again_before_the_hour_resets()
     {
         var engine = Engine(allowance: TimeSpan.FromSeconds(10));
