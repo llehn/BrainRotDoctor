@@ -10,7 +10,7 @@ namespace BrainRotDoctor.App.Ui.Scene;
 
 /// <summary>
 /// The worm scene on screen: a see-through overlay in the bottom-right corner of a
-/// screen, sitting on the taskbar. It never takes focus (the user stays in their
+/// screen, over the taskbar. It never takes focus (the user stays in their
 /// browser), clicks pass through it, and it shows in no taskbar or Alt-Tab list.
 /// It plays the scene once, reports the pop and the end, and goes away.
 /// </summary>
@@ -189,7 +189,7 @@ internal sealed class SceneOverlay
         {
             _drawing.Time = t;
             var dpi = new Vector(96 * _scaling, 96 * _scaling);
-            Avalonia.Skia.Helpers.DrawingContextHelper.RenderAsync(canvas, _drawing, new Rect(0, 0, SceneView.Width, SceneView.Height), dpi).Wait();
+            Avalonia.Skia.Helpers.DrawingContextHelper.RenderAsync(canvas, _drawing, new Rect(0, 0, _size.Width, _size.Height), dpi).Wait();
         }
 
         NativeMethods.GdiFlush();
@@ -203,7 +203,10 @@ internal sealed class SceneOverlay
         NativeMethods.UpdateLayeredWindow(_window, _screenDc, ref _position, ref _size, _memoryDc, ref source, 0, ref blend, NativeMethods.ULW_ALPHA);
     }
 
-    /// <summary>The bottom-right corner of the working area (above the taskbar) of the chosen screen, in physical pixels.</summary>
+    /// <summary>
+    /// The bottom-right corner of the chosen screen itself (over the taskbar), in physical
+    /// pixels, so the brain rises from the screen's bottom edge and the doctor enters from its right edge.
+    /// </summary>
     private void PlaceInCorner()
     {
         var point = _near is { } p ? new NativeMethods.POINT { X = p.X, Y = p.Y } : default;
@@ -215,12 +218,13 @@ internal sealed class SceneOverlay
             _scaling = dpi / 96.0;
         }
 
+        _drawing.Scaling = _scaling;
         _size = new NativeMethods.SIZE
         {
             Width = (int)Math.Ceiling(SceneView.Width * _scaling),
             Height = (int)Math.Ceiling(SceneView.Height * _scaling),
         };
-        _position = new NativeMethods.POINT { X = info.Work.Right - _size.Width, Y = info.Work.Bottom - _size.Height };
+        _position = new NativeMethods.POINT { X = info.Monitor.Right - _size.Width, Y = info.Monitor.Bottom - _size.Height };
     }
 
     /// <summary>A pixel buffer Windows can take directly (top-down, premultiplied BGRA), which the painter draws into.</summary>
@@ -291,6 +295,15 @@ internal sealed class SceneOverlay
 
         public double Time { get; set; }
 
-        public override void Render(DrawingContext context) => _scene.Draw(context, Time);
+        /// <summary>The screen's zoom level; the painter draws in physical pixels, so the scene is scaled up here.</summary>
+        public double Scaling { get; set; } = 1;
+
+        public override void Render(DrawingContext context)
+        {
+            using (context.PushTransform(Matrix.CreateScale(Scaling, Scaling)))
+            {
+                _scene.Draw(context, Time);
+            }
+        }
     }
 }
