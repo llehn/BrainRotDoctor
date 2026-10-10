@@ -57,7 +57,7 @@ internal sealed class InstallerWindow : Window
 
         var icon = new Image
         {
-            Source = ProductIcon.RenderBitmap(96),
+            Source = ProductIcon.At(96),
             Width = 72,
             Height = 72,
             HorizontalAlignment = HorizontalAlignment.Center,

@@ -182,14 +182,7 @@ internal sealed partial class MainWindow : Window
 
     private static Control Brand()
     {
-        var logo = new Border
-        {
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(9),
-            Child = new Border { HorizontalAlignment = HorizontalAlignment.Center, Child = Icons.Make(Icons.Shield, 18, UiTheme.InkText) },
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Ink),
-        };
+        var logo = new Image { Source = ProductIcon.At(64), Width = 32, Height = 32 };
         StackPanel row = UiTheme.HStack(10, logo, UiTheme.Strong("BrainRotDoctor", 15));
         row.Margin = new Thickness(8, 2, 8, 20);
         return row;

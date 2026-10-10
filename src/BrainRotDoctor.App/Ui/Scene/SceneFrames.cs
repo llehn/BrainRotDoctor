@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using System.Globalization;
+using System.IO;
 
 namespace BrainRotDoctor.App.Ui.Scene;
 
@@ -14,6 +15,8 @@ namespace BrainRotDoctor.App.Ui.Scene;
 /// given moments into one PNG, two frames per row at twice the real size, over the
 /// design page's background, to compare it with the approved design frame by frame;
 /// it also measures the cost of a frame.
+/// <c>--scene-clip &lt;folder&gt;</c> renders every frame of the scene (30 a second,
+/// twice the real size, transparent) as numbered PNGs, for the website's clip.
 /// <c>--scene-preview [count]</c> plays the real overlay on the main screen.
 /// </summary>
 internal static class SceneFrames
@@ -57,6 +60,25 @@ internal static class SceneFrames
 
         costs.Sort();
         Console.WriteLine($"frame cost: median {costs[120]:F1} ms, 95% {costs[228]:F1} ms, worst {costs[^1]:F1} ms");
+    }
+
+    public static void Clip(string dir)
+    {
+        AppBuilder.Configure<Application>().UsePlatformDetect().SetupWithoutStarting();
+        Directory.CreateDirectory(dir);
+        var scene = new WormScene(new ExtractionScript());
+        const int fps = 30;
+        int count = (int)Math.Round(scene.Script.Length * fps);
+        for (int i = 0; i < count; i++)
+        {
+            using var bitmap = new RenderTargetBitmap(new PixelSize((int)SceneView.Width * 2, (int)SceneView.Height * 2), new Vector(192, 192));
+            using (DrawingContext dc = bitmap.CreateDrawingContext())
+            {
+                scene.Draw(dc, (double)i / fps);
+            }
+
+            bitmap.Save(Path.Combine(dir, $"frame{i:D3}.png"));
+        }
     }
 
     /// <summary>

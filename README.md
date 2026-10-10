@@ -1,4 +1,8 @@
+<p align="center"><img src="docs/assets/icon-512.png" width="160" alt="BrainRotDoctor: a pink brain with spiral eyes and a worm peeking out"></p>
+
 # BrainRotDoctor
+
+**[Website](https://llehn.github.io/BrainRotDoctor/) · [Download for Windows](https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe)**
 
 BrainRotDoctor is a Windows application for limiting Instagram
 doom-scrolling while retaining access to useful surfaces such as Direct
@@ -96,7 +100,17 @@ dotnet run --project src/BrainRotDoctor.App -- --no-install-prompt --no-watchdog
 Debug builds can show the worm scene on its own: `--scene-preview [count]` plays
 it in the screen corner, and `--scene-frames out.png [--times 0.5,2.0,…]` renders
 frames at the given seconds (twice real size) for side-by-side comparison with
-the design.
+the design. `--scene-clip <folder>` writes every frame (30 a second, transparent)
+for the website's animation, and `--ui-snapshots <folder>` renders every app
+screen with sample rules (the website's screenshots come from it).
+
+The product icon is the worm scene's hypnotised brain, drawn at runtime by the
+scene itself. The exe's own icon file is generated from it; regenerate it after
+changing the scene's look:
+
+```sh
+BrainRotDoctor.exe --dump-icon src\BrainRotDoctor.App\Assets\BrainRotDoctor.ico
+```
 
 ### Releases and silent auto-update
 

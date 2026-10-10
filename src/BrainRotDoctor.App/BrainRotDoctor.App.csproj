@@ -18,6 +18,10 @@
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The exe's icon (Explorer, pinned taskbar, Apps & features). Generated from
+         the worm scene by running the app with the dump-icon option and this path
+         (see README); regenerate it whenever the scene's look changes. -->
+    <ApplicationIcon>Assets\BrainRotDoctor.ico</ApplicationIcon>
     <!-- NU1903: a vulnerability in Tmds.DBus.Protocol, a Linux-only transitive
          dependency of Avalonia.Desktop that is never loaded on Windows. -->
     <NoWarn>$(NoWarn);NU1903</NoWarn>

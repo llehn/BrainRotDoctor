@@ -47,6 +47,12 @@ internal static class Program
             return;
         }
 
+        if (TryGetOption(args, "--scene-clip", "--scene-clip") is { } clipDir)
+        {
+            Ui.Scene.SceneFrames.Clip(clipDir);
+            return;
+        }
+
         if (HasFlag(args, "--scene-preview"))
         {
             Ui.Scene.SceneFrames.Preview(int.TryParse(TryGetOption(args, "--scene-preview", "--scene-preview"), out int times) ? times : 1, args);
@@ -263,12 +269,11 @@ internal static class Program
         System.Diagnostics.Process.Start(info);
     }
 
-    /// <summary>Dev helper: render the product icon to a PNG for inspection.</summary>
+    /// <summary>Dev helper: render the product icon to a PNG, or to the exe's .ico file.</summary>
     private static void DumpIcon(string path)
     {
         AppBuilder.Configure<Avalonia.Application>().UsePlatformDetect().SetupWithoutStarting();
-        using var bmp = BrainRotDoctor.App.Ui.ProductIcon.RenderBitmap(256);
-        bmp.Save(path);
+        BrainRotDoctor.App.Ui.ProductIcon.Save(path);
     }
 
     private static LoadedConfiguration LoadConfiguration(string[] args, StrictModeStore strictModeStore)

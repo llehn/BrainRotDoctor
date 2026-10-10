@@ -9,11 +9,17 @@ namespace BrainRotDoctor.App.Ui.Scene;
 /// </summary>
 internal sealed class WormScene
 {
-    private readonly Brain _brain = new();
+    private readonly Brain _brain;
     private readonly Worm _worm = new();
     private readonly Doctor _doctor = new();
 
-    public WormScene(ISceneScript script) => Script = script;
+    /// <param name="script">Who does what, when.</param>
+    /// <param name="folds">False draws the brain without its folds (the mark at tray sizes).</param>
+    public WormScene(ISceneScript script, bool folds = true)
+    {
+        Script = script;
+        _brain = new Brain(folds);
+    }
 
     public ISceneScript Script { get; }
 

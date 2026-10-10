@@ -4,12 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BrainRotDoctor — put your doom-scrolling on a timer</title>
-  <meta name="description" content="A free Windows app that limits the sites quietly eating your day. Time-budget rules, scheduled blocks, and a strict mode that's genuinely hard to wriggle out of.">
-  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <meta name="description" content="A free Windows app that gives Reels, Shorts and endless feeds a time budget. When it runs out, a little doctor pulls the worm out of your brain and the tab closes.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" href="assets/icon-512.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <meta property="og:title" content="BrainRotDoctor">
   <meta property="og:description" content="Put your doom-scrolling on a timer. Free, Windows, no admin needed.">
-  <meta property="og:image" content="assets/brain.svg">
+  <meta property="og:image" content="https://llehn.github.io/BrainRotDoctor/assets/og-image.png">
   <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -17,132 +21,183 @@
 </head>
 <body>
   <header class="nav">
-    <a class="brand" href="#top">
-      <img src="assets/logo.svg" width="34" height="34" alt="">
-      <span>BrainRot<b>Doctor</b></span>
-    </a>
-    <nav class="nav-links">
-      <a href="#how" data-i18n="nav.how">How it works</a>
-      <a href="#install" data-i18n="nav.install">Install</a>
-      <a href="#features" data-i18n="nav.features">Features</a>
-      <a class="ghost" href="https://github.com/llehn/BrainRotDoctor">GitHub</a>
-      <select id="langsel" class="langsel" aria-label="Language"></select>
-    </nav>
+    <div class="nav-inner">
+      <a class="brand" href="#top">
+        <img src="assets/icon-512.png" width="36" height="36" alt="">
+        <span>BrainRotDoctor</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#how" data-i18n="nav.how">How it works</a>
+        <a href="#worm" data-i18n="nav.worm">The worm</a>
+        <a href="#strict" data-i18n="nav.strict">Strict mode</a>
+        <a href="#install" data-i18n="nav.install">Install</a>
+        <a class="gh" href="https://github.com/llehn/BrainRotDoctor">GitHub</a>
+        <select id="langsel" class="langsel" aria-label="Language"></select>
+      </nav>
+    </div>
   </header>
 
   <main id="top">
-    <section class="hero">
+    <section class="hero wrap">
       <div class="hero-copy">
-        <span class="eyebrow" data-i18n="hero.eyebrow">Free · Windows · No admin needed</span>
+        <span class="eyebrow" data-i18n="hero.eyebrow">Free · Windows 10/11 · No admin needed</span>
         <h1 data-i18n="hero.h1">Put your doom-scrolling<br>on a timer.</h1>
-        <p class="lede" data-i18n="hero.lede">Reels, Shorts, the endless feed — they don't want you to leave, and your brain keeps saying "just one more." <b>BrainRotDoctor</b> gives those sites a strict time budget and closes the tab when it's up. The friction your willpower has been missing.</p>
+        <p class="lede" data-i18n="hero.lede">Reels, Shorts, the endless feed: they're built so you never leave. <b>BrainRotDoctor</b> gives them a time budget. When it runs out, a little doctor pulls the worm out of your brain and the tab closes.</p>
         <div class="cta">
-          <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe" data-i18n="hero.download">↓ Download for Windows</a>
+          <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></svg><span data-i18n="hero.download">Download for Windows</span></a>
           <a class="btn" href="https://github.com/llehn/BrainRotDoctor" data-i18n="hero.source">View source</a>
         </div>
-        <p class="fineprint" data-i18n="hero.fineprint">One <code>.exe</code>, ~71&nbsp;MB · installs per-user · 31 languages</p>
+        <p class="fineprint" data-i18n="hero.fineprint">One <code>.exe</code> · installs for your user only · updates itself</p>
       </div>
-      <div class="hero-art">
-        <div class="glow"></div>
-        <img src="assets/brain.svg" alt="A melting, hypnotized brain" class="mascot">
-        <span class="float f1">▶</span>
-        <span class="float f2">♥</span>
-        <span class="float f3">∞</span>
-        <span class="float f4">↻</span>
-      </div>
+      <figure class="stage">
+        <img class="clip" src="assets/worm-scene.webp" width="720" height="440" alt="A pink brain with spiral eyes and a worm inside. A doctor pulls the worm out with forceps and the brain smiles.">
+        <figcaption data-i18n="hero.caption">What you see when time is up. On the pop, the tab is gone.</figcaption>
+      </figure>
     </section>
 
     <section class="band">
-      <p data-i18n="band1">You opened it to check one message. Forty minutes later your thumb aches, the feed is still infinite, and you couldn't name a single thing you saw. <b>That's the loop.</b> Browser extensions get switched off in three clicks — so they don't work. This is built to be annoying to bypass on purpose.</p>
+      <p class="wrap" data-i18n="band1">You opened it to check one message. Forty minutes later the feed is still going and you can't name a single thing you saw. <b>That's the loop.</b> Browser extensions switch off in three clicks, so they don't hold. BrainRotDoctor runs outside the browser and is built to be annoying to get around.</p>
     </section>
 
-    <section id="how" class="section">
+    <section id="how" class="section wrap">
       <h2 data-i18n="how.title">How it works</h2>
-      <p class="section-sub" data-i18n="how.sub">You make <b>rules</b>. A rule is simply <em>what</em> to block and <em>when</em>.</p>
-      <div class="grid cards">
+      <p class="section-sub" data-i18n="how.sub">You make <b>rules</b>. A rule is <em>what</em> to limit and <em>when</em>.</p>
+      <div class="cards">
         <article class="card">
-          <div class="ic">🎯</div>
-          <h3 data-i18n="card1.t">Pick what to block</h3>
-          <p data-i18n="card1.b">Choose from a catalog — Instagram Reels, YouTube Shorts, TikTok, X, Reddit and more — or add any custom site. No hosts or regex to fiddle with.</p>
+          <span class="num">1</span>
+          <h3 data-i18n="card1.t">Pick websites, keep the good parts</h3>
+          <p data-i18n="card1.b">Choose Instagram, YouTube, TikTok, Facebook, X, Reddit and more, or type any address. Each site comes split into pages, so you can block Reels and the feed while Messages stay open.</p>
         </article>
         <article class="card">
-          <div class="ic">⏳</div>
-          <h3 data-i18n="card2.t">Allowance per hour</h3>
-          <p data-i18n="card2.b">"Allow 5 minutes per hour, then block." Enough for a peek and a laugh, not enough to disappear for the afternoon. Refills every hour.</p>
+          <span class="num">2</span>
+          <h3 data-i18n="card2.t">Minutes per hour, or nothing</h3>
+          <p data-i18n="card2.b">"5 minutes per hour, then block." Enough for a quick look, not enough to lose the afternoon. The allowance refills every hour. Or block the pages completely.</p>
         </article>
         <article class="card">
-          <div class="ic">🌙</div>
-          <h3 data-i18n="card3.t">Or a hard schedule</h3>
-          <p data-i18n="card3.b">Block completely during a window — say 23:00–07:00 on weekdays — so bedtime stays bedtime and mornings start without the feed.</p>
+          <span class="num">3</span>
+          <h3 data-i18n="card3.t">Hours and days</h3>
+          <p data-i18n="card3.b">Make a rule apply all day or only between set hours, say 23:00 to 07:00 on weekdays, so nights stay nights.</p>
         </article>
-        <article class="card">
-          <div class="ic">🔒</div>
-          <h3 data-i18n="card4.t">Strict mode</h3>
-          <p data-i18n="card4.b">Lock everything for a set time behind a double opt-in. While it's on you can't edit the rules, quit, or even uninstall from Windows the easy way.</p>
+      </div>
+      <figure class="shot">
+        <div class="window">
+          <picture>
+            <source srcset="assets/app-rules-dark.webp" media="(prefers-color-scheme: dark)">
+            <img src="assets/app-rules.webp" width="1120" height="760" loading="lazy" alt="The Rules screen: three rule cards showing minutes used, what is blocked now and when each refills.">
+          </picture>
+        </div>
+        <figcaption data-i18n="shot.rules">Every rule on one screen, with live status: minutes used, what's blocked right now, when it refills.</figcaption>
+      </figure>
+    </section>
+
+    <section class="section wrap split">
+      <div class="split-copy">
+        <h2 data-i18n="pages.title">Block the feed, keep your messages</h2>
+        <p data-i18n="pages.b">Every website is split into its pages, and each page is set to Block or Allow. The common pages come ready, and you can add your own. Not sure what a link will do? Paste it into <b>Check an address</b> and the rule tells you.</p>
+      </div>
+      <div class="window tall">
+        <img src="assets/app-editor.webp" width="1120" height="1130" loading="lazy" alt="Editing a rule: Instagram split into Home feed (blocked), Following feed, Reels, Explore and Messages (allowed).">
+      </div>
+    </section>
+
+    <section id="worm" class="section wrap">
+      <h2 data-i18n="worm.title">Three seconds' warning</h2>
+      <p class="section-sub" data-i18n="worm.sub">A blocked tab doesn't just vanish. A short scene plays in the corner of your screen, and the tab closes the moment the worm pops out.</p>
+      <div class="story">
+        <article>
+          <img src="assets/scene-1.webp" width="720" height="440" loading="lazy" alt="">
+          <h3 data-i18n="worm1.t">Time's up</h3>
+          <p data-i18n="worm1.b">The infested brain rises in the corner of your screen. Switch to another page now and nothing closes.</p>
+        </article>
+        <article>
+          <img src="assets/scene-2.webp" width="720" height="440" loading="lazy" alt="">
+          <h3 data-i18n="worm2.t">The doctor steps in</h3>
+          <p data-i18n="worm2.b">He grabs the worm with his forceps and pulls.</p>
+        </article>
+        <article>
+          <img src="assets/scene-3.webp" width="720" height="440" loading="lazy" alt="">
+          <h3 data-i18n="worm3.t">Pop</h3>
+          <p data-i18n="worm3.b">The worm is out and the tab closes. Only that tab, never the whole browser, and the window you're working in keeps the focus.</p>
         </article>
       </div>
     </section>
 
-    <section class="showcase">
-      <img src="assets/app-mock.svg" alt="BrainRotDoctor showing two rules and live status" loading="lazy">
-      <p class="caption" data-i18n="showcase.caption">Your rules at a glance — with live status: how much time is left, or what's blocked right now.</p>
+    <section id="strict" class="section wrap split reverse">
+      <div class="split-copy">
+        <span class="eyebrow" data-i18n="strict.eyebrow">For the hours when willpower isn't enough</span>
+        <h2 data-i18n="strict.title">Strict mode: no way out</h2>
+        <p data-i18n="strict.b">Pick how long, from an hour to a week, and which rules to lock. Then:</p>
+        <ul class="ticks">
+          <li class="no" data-i18n="strict.l1">Locked rules can't be edited, turned off or deleted</li>
+          <li class="no" data-i18n="strict.l2">Pause is unavailable</li>
+          <li class="no" data-i18n="strict.l3">The app can't be closed or uninstalled</li>
+          <li class="yes" data-i18n="strict.l4">You can still add new rules. Blocking more is always allowed.</li>
+        </ul>
+        <p class="muted" data-i18n="strict.note">There is no early exit. Outside strict mode you can pause blocking any time: for 15 minutes, an hour or the rest of the day.</p>
+      </div>
+      <div class="window">
+        <img src="assets/app-strict.webp" width="1120" height="740" loading="lazy" alt="Strict mode setup: choose how long, which rules to lock, and confirm there is no early exit.">
+      </div>
     </section>
 
-    <section id="install" class="section">
+    <section id="install" class="section wrap">
       <h2 data-i18n="install.title">Install in three clicks</h2>
-      <div class="grid steps">
-        <article class="step">
+      <div class="cards">
+        <article class="card">
           <span class="num">1</span>
           <h3 data-i18n="step1.t">Download</h3>
-          <p data-i18n="step1.b">Grab the single <code>BrainRotDoctor.exe</code> and double-click it.</p>
+          <p data-i18n="step1.b">Get <code>BrainRotDoctor.exe</code> and double-click it.</p>
         </article>
-        <article class="step">
+        <article class="card">
           <span class="num">2</span>
           <h3 data-i18n="step2.t">Get past SmartScreen</h3>
-          <p data-i18n="step2.b">Windows will warn about an unknown publisher (it's unsigned, open-source). Click <b>More info → Run anyway</b>.</p>
+          <p data-i18n="step2.b">Windows warns about an unknown publisher because the app isn't signed. Click <b>More info → Run anyway</b>.</p>
         </article>
-        <article class="step">
+        <article class="card">
           <span class="num">3</span>
           <h3 data-i18n="step3.t">Install</h3>
-          <p data-i18n="step3.b">Click <b>Install</b> in the prompt. It sets itself up for your user, starts with Windows, and begins protecting you.</p>
+          <p data-i18n="step3.b">Click <b>Install</b>. It sets itself up for your user, starts with Windows and begins protecting you.</p>
         </article>
       </div>
-      <p class="note" data-i18n="install.note">No administrator rights required — it installs under your own user folder. To remove it later, use Windows "Apps &amp; features" (this won't work while strict mode is active — that's the point).</p>
+      <p class="note" data-i18n="install.note">No administrator rights needed. Running a newer download over an installed copy simply upgrades it, and installed copies update themselves in the background. To remove it, use Windows Settings → Apps (not while strict mode is on).</p>
       <div class="cta center">
-        <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe" data-i18n="hero.download">↓ Download for Windows</a>
+        <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/></svg><span data-i18n="hero.download">Download for Windows</span></a>
       </div>
     </section>
 
-    <section id="features" class="section">
+    <section class="section wrap">
       <h2 data-i18n="features.title">The details</h2>
-      <div class="grid features">
-        <div class="feat" data-i18n="feat1"><b>Closes the tab, not the browser.</b> It watches the active tab via Windows UI Automation and closes only the offending page.</div>
-        <div class="feat" data-i18n="feat2"><b>Keeps the useful parts.</b> Block the reels and the feed while DMs and stories stay reachable.</div>
-        <div class="feat" data-i18n="feat3"><b>Two-process guard.</b> A paired watchdog restarts the app instantly if it's killed — no quick-quit escape.</div>
-        <div class="feat" data-i18n="feat4"><b>Survives restarts.</b> Registers per-user autostart, so a reboot doesn't get you off the hook.</div>
-        <div class="feat" data-i18n="feat5"><b>31 languages.</b> Follows your Windows language automatically, switchable in Settings.</div>
-        <div class="feat" data-i18n="feat6"><b>Light &amp; dark.</b> A clean, modern interface that follows your system theme.</div>
-        <div class="feat" data-i18n="feat7"><b>No account, no cloud.</b> Everything stays on your machine. Free and open source.</div>
-        <div class="feat" data-i18n="feat8"><b>Strict-mode-aware uninstall.</b> The easy uninstall is blocked while you're committed — deliberate friction, by design.</div>
+      <div class="features">
+        <div class="feat" data-i18n="feat1"><b>Works in your browser.</b> Chrome, Edge, Firefox, Brave, Opera and Vivaldi. No extension to switch off.</div>
+        <div class="feat" data-i18n="feat2"><b>Never steals focus.</b> Tabs close in the background without moving windows or interrupting what you type.</div>
+        <div class="feat" data-i18n="feat3"><b>Only what's on screen counts.</b> Minimized windows and other desktops don't use up your minutes.</div>
+        <div class="feat" data-i18n="feat4"><b>Hard to kill.</b> Two processes watch each other: close one and the other brings it back. It starts with Windows too.</div>
+        <div class="feat" data-i18n="feat5"><b>Updates itself.</b> Signed updates install quietly in the background. Nothing to click.</div>
+        <div class="feat" data-i18n="feat6"><b>31 languages.</b> Follows your Windows language, or pick one in Settings. Light and dark too.</div>
+        <div class="feat" data-i18n="feat7"><b>No account, no cloud.</b> Your rules stay on your computer.</div>
+        <div class="feat" data-i18n="feat8"><b>Free and open source.</b> MIT licensed. Read every line on GitHub.</div>
       </div>
     </section>
 
-    <section class="band closer">
-      <h2 data-i18n="closer.title">Your attention is worth more than the feed thinks.</h2>
-      <div class="cta center">
-        <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe" data-i18n="closer.download">↓ Get BrainRotDoctor</a>
-        <a class="btn" href="https://github.com/llehn/BrainRotDoctor" data-i18n="closer.source">Read the code</a>
+    <section class="closer">
+      <div class="wrap">
+        <img src="assets/icon-512.png" width="120" height="120" alt="">
+        <h2 data-i18n="closer.title">Your attention is worth more than the feed thinks.</h2>
+        <div class="cta center">
+          <a class="btn primary" href="https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe" data-i18n="closer.download">Get BrainRotDoctor</a>
+          <a class="btn" href="https://github.com/llehn/BrainRotDoctor" data-i18n="closer.source">Read the code</a>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">
+  <footer class="footer wrap">
     <div class="foot-brand">
-      <img src="assets/logo.svg" width="26" height="26" alt="">
+      <img src="assets/icon-512.png" width="28" height="28" alt="">
       <span>BrainRotDoctor</span>
     </div>
-    <p data-i18n="footer.tagline">Free &amp; open source · Windows 10/11 · <a href="https://github.com/llehn/BrainRotDoctor">github.com/llehn/BrainRotDoctor</a></p>
-    <p class="muted" data-i18n="footer.muted">Not affiliated with any of the sites it limits. Use on devices you own.</p>
+    <p data-i18n="footer.tagline">Free and open source · Windows 10/11 · <a href="https://github.com/llehn/BrainRotDoctor">github.com/llehn/BrainRotDoctor</a></p>
+    <p class="muted" data-i18n="footer.muted">Not affiliated with any of the sites it limits. Use it on devices you own.</p>
   </footer>
 
   <script src="i18n.js"></script>

@@ -34,7 +34,11 @@ internal sealed class Brain
 
     private static readonly (double X, double Y)[] Eyes = { (-0.44, 0.7), (0.44, 0.7) };
 
+    private readonly bool _folds;
     private Look? _look;
+
+    /// <param name="folds">False leaves the folds out, for the mark at tray sizes where they turn to noise.</param>
+    public Brain(bool folds = true) => _folds = folds;
 
     /// <summary>The brain's solid body at a pose, for hiding what passes inside it.</summary>
     public static RoundedBox Body(BrainPose pose) => new(Half, Radius, Placement(pose.ScaleX, pose.ScaleY, pose.Y));
@@ -47,7 +51,7 @@ internal sealed class Brain
 
     public void Draw(DrawingContext dc, BrainPose pose)
     {
-        _look ??= new Look(1, 1);
+        _look ??= new Look(1, 1, _folds);
 
         // The look is built standing at height 0, unsquashed: rising and sinking only
         // move it, and the brief squash on the pop stretches the drawing about the
@@ -219,12 +223,12 @@ internal sealed class Brain
         private readonly PatchRegions[] _body;
         private readonly Geometry?[] _folds;
 
-        public Look(double scaleX, double scaleY)
+        public Look(double scaleX, double scaleY, bool folds)
         {
             var box = new RoundedBox(Half, Radius, Placement(scaleX, scaleY, 0));
             _rim = box.Grown(Solid.Outline).Build(shaded: false, rim: true);
             _body = box.Build(shaded: true);
-            _folds = RoundedBox.Faces.Select(face => FoldsOn(box, face)).ToArray();
+            _folds = folds ? RoundedBox.Faces.Select(face => FoldsOn(box, face)).ToArray() : new Geometry?[_body.Length];
             _shadedFolds = ShadeFolds();
         }
 
