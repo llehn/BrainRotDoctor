@@ -8,14 +8,14 @@ using BrainRotDoctor.DesignSystem;
 namespace BrainRotDoctor.App.Ui;
 
 /// <summary>
-/// The main window. Rules, Strict mode and Settings live next to a sidebar;
+/// The main window. Status (the first screen), Rules, Strict mode and Settings live next to a sidebar;
 /// editing a rule and adding websites take over the whole window. The UI is
 /// built in code from the design system's controls and rebuilt per screen;
 /// live numbers (time left, countdowns) update in place from the enforcement status.
 /// </summary>
 internal sealed partial class MainWindow : AppWindow
 {
-    private enum Page { Home, Editor, AddSites, Strict, Settings }
+    private enum Page { Status, Home, Editor, AddSites, Strict, Settings }
 
     private static readonly DayOfWeek[] DayOrder =
     {
@@ -29,7 +29,7 @@ internal sealed partial class MainWindow : AppWindow
     private readonly ContentControl _host = new();
 
     private EditableConfiguration _editable;
-    private Page _page = Page.Home;
+    private Page _page = Page.Status;
     private AppStatus _status;
 
     // Things whose change requires rebuilding the current screen.
@@ -57,7 +57,7 @@ internal sealed partial class MainWindow : AppWindow
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Content = _host;
 
-        Navigate(_status.StrictMode.IsActive ? Page.Strict : Page.Home);
+        Navigate(Page.Status);
 
         _controller.StatusChanged += OnStatusChanged;
         Loc.Changed += Rerender;
@@ -96,6 +96,7 @@ internal sealed partial class MainWindow : AppWindow
             Page.AddSites when _editingRule is not null => BuildAddSites(),
             Page.Strict => WithSidebar(_status.StrictMode.IsActive ? BuildStrictRunning() : BuildStrictSetup()),
             Page.Settings => WithSidebar(BuildSettings()),
+            Page.Status => WithSidebar(BuildStatusPage()),
             _ => WithSidebar(BuildHome()),
         };
 
@@ -143,6 +144,7 @@ internal sealed partial class MainWindow : AppWindow
     {
         var nav = new StackPanel { Spacing = Space.S1 };
         nav.Children.Add(Brand());
+        nav.Children.Add(NavTo(Glyph.Pulse, Loc.T("status"), Page.Status, badge: null));
         nav.Children.Add(NavTo(Glyph.List, Loc.T("rules"), Page.Home, badge: null));
         nav.Children.Add(NavTo(Glyph.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
         nav.Children.Add(NavTo(Glyph.Gear, Loc.T("settings"), Page.Settings, badge: null));

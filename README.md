@@ -41,6 +41,19 @@ Firefox, Chrome, and Edge. A blocked tab does not vanish without warning: a shor
 animated scene plays in the screen corner (a doctor pulls a worm out of a brain)
 and the tab closes the moment the worm pops out, about three seconds in (ADR-012).
 
+The app opens on a **Status** view: where today's browser time went, judged
+brain rot or not, with one click to turn any of it into a rule. Only the page in
+the foreground browser window counts. Time is kept as **statistics, not
+history**: totals per site and per path section (cut off at the first section
+that names a single item, such as an ID or a post title), with no timestamps
+and no page addresses, held on this PC for today only and cleared at midnight
+(`src/BrainRotDoctor.Core/Activity`). Sites are split automatically where the
+time goes (a section with at least a quarter of its parent's time and two
+minutes gets its own line). The verdict comes from behaviour alone (long time
+on a site, or coming back again and again), and a site can be marked "not
+brain rot". The view also shows strict mode at a glance and today's
+achievements.
+
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. Normal startup also registers the app in the
 current user's Windows Run key. Strict mode can be activated from the UI for a

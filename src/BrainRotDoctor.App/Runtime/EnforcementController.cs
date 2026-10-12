@@ -1,4 +1,5 @@
 using BrainRotDoctor.Core.Accounting;
+using BrainRotDoctor.Core.Activity;
 using BrainRotDoctor.Core.Configuration;
 using System.IO;
 
@@ -8,6 +9,7 @@ internal sealed class EnforcementController : IDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ErrorBackoff = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ActivitySaveInterval = TimeSpan.FromSeconds(30);
 
     // If the scene never reports its pop (it failed to show), the tabs close anyway
     // after this long; if it never reports its end, a new scene may start after this.
@@ -23,6 +25,9 @@ internal sealed class EnforcementController : IDisposable
     private readonly StrictModeStore _strictModeStore;
     private readonly UsageStore _usageStore;
     private readonly PauseStore _pauseStore;
+    private readonly ActivityStore _activityStore;
+    private readonly ActivityTally _activity = new();
+    private DateTimeOffset _activitySavedAt;
     private PauseState? _pause;
     private readonly string? _logPath;
     private readonly System.Threading.Timer _timer;
@@ -48,7 +53,8 @@ internal sealed class EnforcementController : IDisposable
         StrictModeStore strictModeStore,
         string? logPath = null,
         UsageStore? usageStore = null,
-        PauseStore? pauseStore = null)
+        PauseStore? pauseStore = null,
+        ActivityStore? activityStore = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         _observer = observer ?? throw new ArgumentNullException(nameof(observer));
@@ -66,6 +72,9 @@ internal sealed class EnforcementController : IDisposable
         // restart can't be used to wipe a limit. A record from a past hour is
         // ignored automatically on the first tick.
         _engine.RestoreUsage(_usageStore.Load());
+        _activityStore = activityStore ?? new ActivityStore();
+        _activity.Restore(_activityStore.Load(), DateTimeOffset.Now);
+        _activitySavedAt = DateTimeOffset.Now;
         _timer = new System.Threading.Timer(Tick);
         _status = BuildStatus(
             DateTimeOffset.Now,
@@ -221,6 +230,7 @@ internal sealed class EnforcementController : IDisposable
 
         _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         PersistUsage();
+        PersistActivity(DateTimeOffset.Now);
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, Status.Rules, Status.LastError));
     }
 
@@ -263,6 +273,8 @@ internal sealed class EnforcementController : IDisposable
 
                 HandleCloseDecisions(now, windows, result.CloseDecisions);
             }
+
+            RecordActivity(now, windows);
 
             // Only an active (charged) tick changes the numbers, so persist then —
             // not every idle second. The hour's usage thus survives a later restart.
@@ -481,7 +493,8 @@ internal sealed class EnforcementController : IDisposable
                 _recentClosures.ToArray(),
                 _strictModeStore.GetSnapshot(),
                 _pause,
-                lastError);
+                lastError,
+                _activity.Snapshot());
         }
     }
 
@@ -504,6 +517,45 @@ internal sealed class EnforcementController : IDisposable
     }
 
     private void PersistUsage() => _usageStore.Save(_engine.ExportUsage());
+
+    /// <summary>
+    /// Counts the page in front toward today's statistics — also while paused, since
+    /// they describe what you did, not what was enforced — and stores them now and then.
+    /// </summary>
+    private void RecordActivity(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows)
+    {
+        Uri? front = windows.FirstOrDefault(w => w.IsForeground)?.Url;
+        lock (_sync)
+        {
+            _activity.Tick(front, now);
+            if (_pause?.IsActiveAt(now) == true)
+            {
+                _activity.MarkPaused(now);
+            }
+
+            if (_strictModeStore.GetSnapshot().IsActive)
+            {
+                _activity.MarkStrict(now);
+            }
+        }
+
+        if (now - _activitySavedAt >= ActivitySaveInterval)
+        {
+            PersistActivity(now);
+        }
+    }
+
+    private void PersistActivity(DateTimeOffset now)
+    {
+        ActivityRecord record;
+        lock (_sync)
+        {
+            record = _activity.Snapshot();
+            _activitySavedAt = now;
+        }
+
+        _activityStore.Save(record);
+    }
 
     private void Publish(AppStatus status)
     {

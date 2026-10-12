@@ -142,6 +142,8 @@ public static class Glyph
     public const string Check = "M20 6L9 17l-5-5";
     public const string Ban = "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0 M4.9 4.9l14.2 14.2";
     public const string Search = "M3 11a8 8 0 1 0 16 0a8 8 0 1 0-16 0 M21 21l-4.3-4.3";
+    public const string Pulse = "M22 12h-4l-3 9L9 3l-3 9H2";
+    public const string Award = "M5 8a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M8.21 13.89L7 23l5-3 5 3-1.21-9.12";
 
     /// <summary>Every glyph by name, for the gallery.</summary>
     internal static readonly (string Name, string Data)[] All =
@@ -150,7 +152,8 @@ public static class Glyph
         (nameof(Play), Play), (nameof(Plus), Plus), (nameof(Minus), Minus), (nameof(ArrowLeft), ArrowLeft),
         (nameof(ChevronDown), ChevronDown), (nameof(ChevronUp), ChevronUp), (nameof(Pencil), Pencil),
         (nameof(Trash), Trash), (nameof(Close), Close), (nameof(Clock), Clock), (nameof(Globe), Globe),
-        (nameof(Check), Check), (nameof(Ban), Ban), (nameof(Search), Search),
+        (nameof(Check), Check), (nameof(Ban), Ban), (nameof(Search), Search), (nameof(Pulse), Pulse),
+        (nameof(Award), Award),
     };
 }
 

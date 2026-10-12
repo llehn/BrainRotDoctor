@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
+using BrainRotDoctor.Core.Activity;
 using BrainRotDoctor.Core.Configuration;
 using BrainRotDoctor.DesignSystem;
 using System.IO;
@@ -61,6 +62,9 @@ internal static class UiSnapshots
             new RuleUsage(DefaultConfiguration.FeedsRuleId, hour, TimeSpan.FromMinutes(5)),
         });
 
+        var activity = new ActivityStore(Path.Combine(data, "activity-today.json"));
+        activity.Save(SampleActivity(now));
+
         var controller = new EnforcementController(
             ConfigurationLoader.Load(json),
             new NoBrowsers(),
@@ -71,7 +75,8 @@ internal static class UiSnapshots
             new StrictModeStore(Path.Combine(data, "strict-mode.json")),
             logPath: null,
             usageStore: usage,
-            pauseStore: new PauseStore(Path.Combine(data, "pause.json")));
+            pauseStore: new PauseStore(Path.Combine(data, "pause.json")),
+            activityStore: activity);
         controller.Start();
 
         var settings = new UiSettingsStore(Path.Combine(data, "ui-settings.json"));
@@ -79,6 +84,28 @@ internal static class UiSnapshots
             .UsePlatformDetect()
             .UseDesignSystem()
             .StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>A plausible day: a forum's comments eating the afternoon, short video, and work.</summary>
+    private static ActivityRecord SampleActivity(DateTimeOffset now)
+    {
+        var places = new (string Key, double Minutes, int Visits)[]
+        {
+            ("reddit.com", 74, 23), ("reddit.com/r", 68, 21), ("reddit.com/r/formula1", 61, 19),
+            ("reddit.com/r/formula1/comments", 55, 17), ("reddit.com/r/pics", 7, 2),
+            ("youtube.com", 41, 9), ("youtube.com/shorts", 22, 6), ("youtube.com/watch", 16, 4),
+            ("github.com", 96, 6), ("github.com/llehn", 60, 4), ("github.com/dotnet", 30, 3),
+            ("news.ycombinator.com", 18, 8), ("news.ycombinator.com/item", 14, 6),
+            ("docs.avaloniaui.net", 12, 3), ("docs.avaloniaui.net/docs", 12, 3),
+            ("instagram.com", 6, 7), ("instagram.com/direct", 4, 5),
+            ("wikipedia.org", 0.6, 1), ("bbc.com", 0.4, 1),
+        };
+
+        return new ActivityRecord
+        {
+            Day = ActivityTally.DayOf(now),
+            Places = places.ToDictionary(p => p.Key, p => new PlaceTotal { Seconds = p.Minutes * 60, Visits = p.Visits }),
+        };
     }
 
     private sealed class NoBrowsers : IBrowserObserver, IBrowserTabCloser
@@ -147,6 +174,12 @@ internal static class UiSnapshots
             }
 
             await Task.Delay(1500);
+            await Shot("00-status", 1100);
+            window.PreviewBlockFromStatus("reddit.com", 1);
+            await Shot("00b-block-everything-else", 900);
+            window.PreviewBlockFromStatus("reddit.com", 0);
+            await Shot("00c-block-section", 900);
+            window.PreviewPage("home");
             await Shot("01-home");
 
             _controller.Pause(TimeSpan.FromMinutes(15));
@@ -193,6 +226,8 @@ internal static class UiSnapshots
             await Shot("09-settings");
 
             RequestedThemeVariant = ThemeVariant.Dark;
+            window.PreviewPage("status");
+            await Shot("10a-status-dark", 1100);
             window.PreviewPage("home");
             await Shot("10-home-dark");
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");
@@ -204,6 +239,8 @@ internal static class UiSnapshots
             await Shot("12-strict-running");
             window.PreviewPage("home");
             await Shot("13-home-strict");
+            window.PreviewPage("status");
+            await Shot("14-status-strict", 1100);
 
             await CaptureGallery("gallery-light", ThemeVariant.Light);
             await CaptureGallery("gallery-dark", ThemeVariant.Dark);
@@ -236,6 +273,7 @@ internal sealed partial class MainWindow
         {
             "strict" => Page.Strict,
             "settings" => Page.Settings,
+            "status" => Page.Status,
             _ => Page.Home,
         });
     }
@@ -250,6 +288,13 @@ internal sealed partial class MainWindow
     }
 
     internal void PreviewNewRule() => OpenEditor(NewRule(), -1);
+
+    /// <summary>The rule "Block" opens from the status view, for a site's line at <paramref name="placeIndex"/>.</summary>
+    internal void PreviewBlockFromStatus(string host, int placeIndex)
+    {
+        ActivitySite site = ActivityReport.Build(_controller.Status.Activity).Sites.First(s => s.Host == host);
+        BlockPlace(site, site.Places[placeIndex]);
+    }
 
     internal void PreviewAddSites(params string[] picks)
     {

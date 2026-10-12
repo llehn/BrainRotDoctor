@@ -13,6 +13,7 @@ internal sealed partial class MainWindow
 
     private EditableConfiguration.EditableRule? _editingRule;
     private int _editingIndex = -1;
+    private Page _editorReturn = Page.Home; // where back, cancel, save and delete lead
     private readonly HashSet<EditableConfiguration.EditableSite> _openSites = new();
     private EditableConfiguration.EditablePage? _editingPage;
     private EditableConfiguration.EditablePage? _testHit;
@@ -26,8 +27,9 @@ internal sealed partial class MainWindow
     private StackPanel? _sitesPanel;
     private ContentControl? _testResultHost;
 
-    private void OpenEditor(EditableConfiguration.EditableRule rule, int index)
+    private void OpenEditor(EditableConfiguration.EditableRule rule, int index, Page returnTo = Page.Home)
     {
+        _editorReturn = returnTo;
         _editingRule = rule;
         _editingIndex = index;
         _openSites.Clear();
@@ -48,8 +50,8 @@ internal sealed partial class MainWindow
     {
         EditableConfiguration.EditableRule rule = _editingRule!;
 
-        var back = new PillButton(Loc.T("rules"), ButtonKind.Ghost, Glyph.ArrowLeft);
-        back.Click += (_, _) => Navigate(Page.Home);
+        var back = new PillButton(_editorReturn == Page.Status ? Loc.T("status") : Loc.T("rules"), ButtonKind.Ghost, Glyph.ArrowLeft);
+        back.Click += (_, _) => Navigate(_editorReturn);
 
         var name = new TextField(rule.Name, Loc.T("rule_name"), TextFieldStyle.Title);
         name.Changed += text => rule.Name = text;
@@ -76,7 +78,7 @@ internal sealed partial class MainWindow
         }
 
         var cancel = new PillButton(Loc.T("cancel"));
-        cancel.Click += (_, _) => Navigate(Page.Home);
+        cancel.Click += (_, _) => Navigate(_editorReturn);
         var save = new PillButton(Loc.T("save_rule"), ButtonKind.Primary);
         save.Click += (_, _) => SaveEditingRule();
         actions.Children.Add(cancel);
@@ -737,7 +739,7 @@ internal sealed partial class MainWindow
             {
                 _editable = _controller.GetEditableConfiguration();
                 _editingRule = null;
-                Navigate(Page.Home);
+                Navigate(_editorReturn);
                 return;
             }
 
@@ -761,7 +763,7 @@ internal sealed partial class MainWindow
         {
             _editable = _controller.GetEditableConfiguration();
             _editingRule = null;
-            Navigate(Page.Home);
+            Navigate(_editorReturn);
             return;
         }
 

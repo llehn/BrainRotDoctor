@@ -38,7 +38,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             }
 
             Uri? url = TryReadUrl(handle, browserName!, tracker, handle == foreground);
-            result.Add(new ObservedBrowserWindow(handle.ToInt64().ToString(), handle, browserName!, url));
+            result.Add(new ObservedBrowserWindow(handle.ToInt64().ToString(), handle, browserName!, url, handle == foreground));
         }
 
         foreach (IntPtr gone in _trackers.Keys.Where(h => result.All(w => w.WindowHandle != h)).ToArray())

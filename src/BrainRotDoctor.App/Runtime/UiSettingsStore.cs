@@ -10,7 +10,7 @@ internal enum ThemePreference
     Dark,
 }
 
-/// <summary>Persists small UI preferences (currently just the theme choice).</summary>
+/// <summary>Persists small UI preferences: theme, language, and the sites you marked as fine.</summary>
 internal sealed class UiSettingsStore
 {
     private readonly string _path;
@@ -61,6 +61,16 @@ internal sealed class UiSettingsStore
         Write(state);
     }
 
+    /// <summary>Sites you said aren't brain rot, by host; the status view never judges them.</summary>
+    public HashSet<string> LoadFineSites() => new(Read().FineSites ?? new(), StringComparer.Ordinal);
+
+    public void SaveFineSites(IEnumerable<string> hosts)
+    {
+        State state = Read();
+        state.FineSites = hosts.OrderBy(h => h, StringComparer.Ordinal).ToList();
+        Write(state);
+    }
+
     private State Read()
     {
         try
@@ -92,5 +102,6 @@ internal sealed class UiSettingsStore
     {
         public string Theme { get; set; } = nameof(ThemePreference.System);
         public string Language { get; set; } = "auto";
+        public List<string>? FineSites { get; set; }
     }
 }

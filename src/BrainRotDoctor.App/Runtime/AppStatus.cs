@@ -1,4 +1,5 @@
 using BrainRotDoctor.Core.Accounting;
+using BrainRotDoctor.Core.Activity;
 
 namespace BrainRotDoctor.App.Runtime;
 
@@ -13,8 +14,10 @@ internal sealed class AppStatus
         IReadOnlyList<CloseEvent> recentClosures,
         StrictModeSnapshot strictMode,
         PauseState? pause,
-        string? lastError)
+        string? lastError,
+        ActivityRecord? activity = null)
     {
+        Activity = activity ?? new ActivityRecord();
         UpdatedAt = updatedAt;
         IsRunning = isRunning;
         ConfigSource = configSource;
@@ -39,6 +42,9 @@ internal sealed class AppStatus
     public IReadOnlyList<CloseEvent> RecentClosures { get; }
     public StrictModeSnapshot StrictMode { get; }
     public string? LastError { get; }
+
+    /// <summary>Today's browsing statistics: totals per place, never a history.</summary>
+    public ActivityRecord Activity { get; }
 }
 
 internal sealed class CloseEvent
