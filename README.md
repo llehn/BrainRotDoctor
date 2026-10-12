@@ -100,9 +100,8 @@ dotnet run --project src/BrainRotDoctor.App -- --no-install-prompt --no-watchdog
 Debug builds can show the worm scene on its own: `--scene-preview [count]` plays
 it in the screen corner, and `--scene-frames out.png [--times 0.5,2.0,…]` renders
 frames at the given seconds (twice real size) for side-by-side comparison with
-the design. `--scene-clip <folder>` writes every frame (30 a second, transparent)
-for the website's animation, and `--ui-snapshots <folder>` renders every app
-screen with sample rules (the website's screenshots come from it).
+the design. `--scene-clip <folder>` writes every frame (30 a second, transparent),
+and `--ui-snapshots <folder>` renders every app screen with sample rules.
 
 The product icon is the worm scene's hypnotised brain, drawn at runtime by the
 scene itself. The exe's own icon file is generated from it; regenerate it after
