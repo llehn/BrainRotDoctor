@@ -166,5 +166,6 @@ internal static class Loc
         }
 
         _code = Tables.ContainsKey(code) ? code : "en";
+        DesignSystem.DesignTheme.TextCulture = Culture;
     }
 }

@@ -1,10 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Layout;
-using Avalonia.Media;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Configuration;
+using BrainRotDoctor.DesignSystem;
 
 namespace BrainRotDoctor.App.Ui;
 
@@ -22,9 +21,10 @@ internal sealed partial class MainWindow
     private bool _confirmDelete;
     private string? _editorError;
 
-    private Border? _scheduleHost;
+    private ContentControl? _scheduleHost;
+    private TextLine? _summaryText;
     private StackPanel? _sitesPanel;
-    private Border? _testResultHost;
+    private ContentControl? _testResultHost;
 
     private void OpenEditor(EditableConfiguration.EditableRule rule, int index)
     {
@@ -48,32 +48,18 @@ internal sealed partial class MainWindow
     {
         EditableConfiguration.EditableRule rule = _editingRule!;
 
-        PillButton back = UiTheme.Ghost(Loc.T("rules"), Icons.ArrowLeft);
+        var back = new PillButton(Loc.T("rules"), ButtonKind.Ghost, Glyph.ArrowLeft);
         back.Click += (_, _) => Navigate(Page.Home);
 
-        var name = new TextBox
-        {
-            Text = rule.Name,
-            Watermark = Loc.T("rule_name"),
-            FontSize = 20,
-            FontWeight = FontWeight.SemiBold,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-            MinHeight = 44,
-        };
-        name.TextChanged += (_, _) => rule.Name = name.Text ?? "";
+        var name = new TextField(rule.Name, Loc.T("rule_name"), TextFieldStyle.Title);
+        name.Changed += text => rule.Name = text;
 
-        var actions = UiTheme.HStack(10);
+        StackPanel actions = Layout.Row(10);
         if (_editingIndex >= 0)
         {
-            PillButton delete = _confirmDelete
-                ? UiTheme.Primary(Loc.T("confirm_delete"), Icons.Trash)
-                : UiTheme.DangerText(Loc.T("delete_rule"), Icons.Trash);
-            if (_confirmDelete)
-            {
-                delete[!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Danger);
-            }
-
+            var delete = _confirmDelete
+                ? new PillButton(Loc.T("confirm_delete"), ButtonKind.DangerSolid, Glyph.Trash)
+                : new PillButton(Loc.T("delete_rule"), ButtonKind.Danger, Glyph.Trash);
             delete.Click += (_, _) =>
             {
                 if (_confirmDelete)
@@ -89,33 +75,25 @@ internal sealed partial class MainWindow
             actions.Children.Add(delete);
         }
 
-        PillButton cancel = UiTheme.Secondary(Loc.T("cancel"));
+        var cancel = new PillButton(Loc.T("cancel"));
         cancel.Click += (_, _) => Navigate(Page.Home);
-        PillButton save = UiTheme.Primary(Loc.T("save_rule"));
+        var save = new PillButton(Loc.T("save_rule"), ButtonKind.Primary);
         save.Click += (_, _) => SaveEditingRule();
         actions.Children.Add(cancel);
         actions.Children.Add(save);
 
-        _scheduleHost = new Border();
+        _scheduleHost = new ContentControl();
         RebuildSchedule();
 
-        var body = new StackPanel { Spacing = 20 };
+        var body = new StackPanel { Spacing = Space.S5 };
         if (_editorError is not null)
         {
-            body.Children.Add(ErrorBanner(_editorError));
+            body.Children.Add(new Banner(Tone.Danger, Glyph.Ban, Banner.Message(Tone.Danger, new Phrase(_editorError, Strong: true))));
         }
 
-        body.Children.Add(Columns(_scheduleHost, BuildWhatColumn(), 340));
-        return FullScreen(FullScreenBar(back, name, actions), body);
+        body.Children.Add(Layout.Columns(_scheduleHost, BuildWhatColumn(), 340));
+        return new FullPageLayout(new TopBar(back, name, actions), body);
     }
-
-    private static Control ErrorBanner(string message) => new Border
-    {
-        CornerRadius = new CornerRadius(12),
-        Padding = new Thickness(16, 12),
-        Child = UiTheme.HStack(10, Icons.Make(Icons.Ban, 18, UiTheme.Danger), UiTheme.Text(message, 14, FontWeight.Medium, UiTheme.Danger)),
-        [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.BlockSoft),
-    };
 
     // ----- When it applies -----
 
@@ -126,30 +104,36 @@ internal sealed partial class MainWindow
             return;
         }
 
-        var card = new StackPanel { Spacing = 20 };
-        card.Children.Add(UiTheme.H2(Loc.T("when_it_applies")));
+        var card = new StackPanel { Spacing = Space.S5 };
+        card.Children.Add(new TextLine(Loc.T("when_it_applies"), TextStyle.Subheading));
 
         // Limit
-        var limit = new Segmented(new (string, string?)[] { (Loc.T("time_allowance"), null), (Loc.T("block_completely"), null) }, rule.BlockCompletely ? 1 : 0);
+        var limit = new Segmented(new Segment[] { new(Loc.T("time_allowance")), new(Loc.T("block_completely")) }, rule.BlockCompletely ? 1 : 0);
         limit.Changed += i => { rule.BlockCompletely = i == 1; RebuildSchedule(); };
-        var limitSection = UiTheme.VStack(10, UiTheme.SectionLabel(Loc.T("limit")), limit);
+        StackPanel limitSection = Layout.Column(10, new TextLine(Loc.T("limit"), TextStyle.Overline), limit);
         if (rule.BlockCompletely)
         {
-            limitSection.Children.Add(UiTheme.Muted(Loc.T("block_completely_help")));
+            limitSection.Children.Add(new TextLine(Loc.T("block_completely_help"), TextStyle.Small));
         }
         else
         {
-            limitSection.Children.Add(UiTheme.HStack(12, MinutesStepper(rule), UiTheme.Body(Loc.T("minutes_every_hour"))));
-            limitSection.Children.Add(UiTheme.Muted(Loc.T("allowance_help")));
+            var minutes = new Stepper(rule.AllowanceMinutes, 1, 59, Loc.T("fewer_minutes"), Loc.T("more_minutes"));
+            minutes.Changed += value =>
+            {
+                rule.AllowanceMinutes = value;
+                _summaryText?.SetText(RuleSummary(rule));
+            };
+            limitSection.Children.Add(Layout.Row(Space.S3, minutes, new TextLine(Loc.T("minutes_every_hour"))));
+            limitSection.Children.Add(new TextLine(Loc.T("allowance_help"), TextStyle.Small));
         }
 
         card.Children.Add(limitSection);
-        card.Children.Add(UiTheme.Divider());
+        card.Children.Add(new Divider());
 
         // Active window
-        var active = new Segmented(new (string, string?)[] { (Loc.T("all_day"), null), (Loc.T("set_hours"), null) }, rule.AllDay ? 0 : 1);
+        var active = new Segmented(new Segment[] { new(Loc.T("all_day")), new(Loc.T("set_hours")) }, rule.AllDay ? 0 : 1);
         active.Changed += i => { rule.AllDay = i == 0; RebuildSchedule(); };
-        var activeSection = UiTheme.VStack(10, UiTheme.SectionLabel(Loc.T("active")), active);
+        StackPanel activeSection = Layout.Column(10, new TextLine(Loc.T("active"), TextStyle.Overline), active);
         if (!rule.AllDay)
         {
             var hours = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,*") };
@@ -160,95 +144,47 @@ internal sealed partial class MainWindow
             activeSection.Children.Add(hours);
             if (rule.To <= rule.From)
             {
-                activeSection.Children.Add(UiTheme.Muted(Loc.T("runs_overnight")));
+                activeSection.Children.Add(new TextLine(Loc.T("runs_overnight"), TextStyle.Small));
             }
         }
 
         card.Children.Add(activeSection);
-        card.Children.Add(UiTheme.Divider());
+        card.Children.Add(new Divider());
 
         // Days
-        var presets = UiTheme.HStack(0,
+        StackPanel presets = Layout.Row(0,
             DayPreset(Loc.T("every_day_btn"), DayOrder),
             DayPreset(Loc.T("weekdays_btn"), DayOrder.Take(5)),
             DayPreset(Loc.T("weekends_btn"), DayOrder.Skip(5)));
         var dayHeader = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(presets, Dock.Right);
         dayHeader.Children.Add(presets);
-        dayHeader.Children.Add(UiTheme.SectionLabel(Loc.T("days")));
+        dayHeader.Children.Add(new TextLine(Loc.T("days"), TextStyle.Overline));
         var days = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 5, LineSpacing = 5 };
         foreach (DayOfWeek day in DayOrder)
         {
             days.Children.Add(DayToggle(rule, day));
         }
 
-        card.Children.Add(UiTheme.VStack(10, dayHeader, days));
+        card.Children.Add(Layout.Column(10, dayHeader, days));
 
         // Plain-language summary
-        card.Children.Add(new Border
-        {
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(16, 14),
-            Child = UiTheme.VStack(6, UiTheme.SectionLabel(Loc.T("in_plain_words")), UiTheme.Body(RuleSummary(rule))),
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg),
-        });
+        _summaryText = new TextLine(RuleSummary(rule));
+        card.Children.Add(new Card(Layout.Column(6, new TextLine(Loc.T("in_plain_words"), TextStyle.Overline), _summaryText), CardStyle.Inset, CardPadding.Compact));
 
-        _scheduleHost.Child = UiTheme.Card(card, 22);
-    }
-
-    private Control MinutesStepper(EditableConfiguration.EditableRule rule)
-    {
-        TextBlock value = UiTheme.Text(rule.AllowanceMinutes.ToString(Loc.Culture), 18, FontWeight.SemiBold, UiTheme.TextPrimary);
-        value.MinWidth = 44;
-        value.TextAlignment = TextAlignment.Center;
-
-        Border Step(string glyph, int delta, string tip)
-        {
-            var b = new Border
-            {
-                Width = 44,
-                Height = 42,
-                Background = Brushes.Transparent,
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Child = UiTheme.Text(glyph, 18, FontWeight.Normal, UiTheme.TextPrimary),
-            };
-            ((TextBlock)b.Child).HorizontalAlignment = HorizontalAlignment.Center;
-            ToolTip.SetTip(b, tip);
-            b.AddHandler(Gestures.TappedEvent, (_, _) =>
-            {
-                rule.AllowanceMinutes = Math.Clamp(rule.AllowanceMinutes + delta, 1, 59);
-                RebuildSchedule();
-            });
-            return b;
-        }
-
-        return new Border
-        {
-            CornerRadius = new CornerRadius(10),
-            BorderThickness = new Thickness(1),
-            Child = UiTheme.HStack(0, Step("−", -1, Loc.T("fewer_minutes")), value, Step("+", 1, Loc.T("more_minutes"))),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.BorderStrong),
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface),
-        };
+        _scheduleHost.Content = new Card(card, CardStyle.Surface, CardPadding.Roomy);
     }
 
     private static Control LabeledTime(string label, TimeOnly value, Action<TimeOnly> changed)
     {
-        var field = new TimeField(value);
+        var field = new TimeField(value, Loc.T("done"));
         field.Changed += changed;
-        return UiTheme.VStack(5, UiTheme.Caption(label), field);
+        return Layout.Column(5, new TextLine(label, TextStyle.Caption), field);
     }
 
     private Control DayPreset(string label, IEnumerable<DayOfWeek> days)
     {
-        PillButton b = UiTheme.AccentText_(label);
-        b.MinHeight = 28;
-        b.Padding = new Thickness(6, 0);
-        if (b.Child is StackPanel row && row.Children.OfType<TextBlock>().FirstOrDefault() is { } text)
-        {
-            text.FontSize = 12.5;
-        }
-
+        var b = new PillButton(label, ButtonKind.Accent, size: ButtonSize.Small);
         DayOfWeek[] set = days.ToArray();
         b.Click += (_, _) =>
         {
@@ -260,32 +196,22 @@ internal sealed partial class MainWindow
 
     private Control DayToggle(EditableConfiguration.EditableRule rule, DayOfWeek day)
     {
-        bool on = rule.Days.Contains(day);
         string abbrev = DayAbbrev(day);
-        var label = UiTheme.Text(abbrev.Length > 2 ? abbrev[..2] : abbrev, 12.5, FontWeight.SemiBold, on ? UiTheme.InkText : UiTheme.TextSecondary);
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        var b = new Border
+        var toggle = new RoundToggle(abbrev.Length > 2 ? abbrev[..2] : abbrev, rule.Days.Contains(day), Loc.Culture.DateTimeFormat.GetDayName(day));
+        toggle.Toggled += on =>
         {
-            Width = 36,
-            Height = 36,
-            CornerRadius = new CornerRadius(18),
-            BorderThickness = new Thickness(1),
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Child = label,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(on ? UiTheme.Ink : UiTheme.Surface),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(on ? UiTheme.Ink : UiTheme.BorderStrong),
-        };
-        ToolTip.SetTip(b, Loc.Culture.DateTimeFormat.GetDayName(day));
-        b.AddHandler(Gestures.TappedEvent, (_, _) =>
-        {
-            if (!rule.Days.Remove(day))
+            if (on)
             {
                 rule.Days.Add(day);
             }
+            else
+            {
+                rule.Days.Remove(day);
+            }
 
             RebuildSchedule();
-        });
-        return b;
+        };
+        return toggle;
     }
 
     private static string RuleSummary(EditableConfiguration.EditableRule rule)
@@ -318,21 +244,20 @@ internal sealed partial class MainWindow
 
     private Control BuildWhatColumn()
     {
-        PillButton addSites = UiTheme.Secondary(Loc.T("add_websites"), Icons.Plus);
+        var addSites = new PillButton(Loc.T("add_websites"), ButtonKind.Secondary, Glyph.Plus);
         addSites.Click += (_, _) => OpenAddSites();
 
-        TextBlock help = UiTheme.Muted(Loc.T("what_it_limits_help"));
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        header.Children.Add(UiTheme.VStack(4, UiTheme.H2(Loc.T("what_it_limits")), help));
-        addSites.Margin = new Thickness(16, 0, 0, 0);
+        header.Children.Add(Layout.Column(Space.S1, new TextLine(Loc.T("what_it_limits"), TextStyle.Subheading), new TextLine(Loc.T("what_it_limits_help"), TextStyle.Small)));
+        addSites.Margin = new Thickness(Space.S4, 0, 0, 0);
         addSites.VerticalAlignment = VerticalAlignment.Bottom;
         Grid.SetColumn(addSites, 1);
         header.Children.Add(addSites);
 
-        _sitesPanel = new StackPanel { Spacing = 16 };
+        _sitesPanel = new StackPanel { Spacing = Space.S4 };
         RebuildSites();
 
-        return UiTheme.VStack(16, header, _sitesPanel, BuildTester());
+        return Layout.Column(Space.S4, header, _sitesPanel, BuildTester());
     }
 
     private void RebuildSites()
@@ -345,17 +270,17 @@ internal sealed partial class MainWindow
         _sitesPanel.Children.Clear();
         if (rule.Sites.Count == 0)
         {
-            PillButton add = UiTheme.Primary(Loc.T("add_websites"), Icons.Plus);
-            add.HorizontalAlignment = HorizontalAlignment.Center;
+            var add = new PillButton(Loc.T("add_websites"), ButtonKind.Primary, Glyph.Plus) { HorizontalAlignment = HorizontalAlignment.Center };
             add.Click += (_, _) => OpenAddSites();
-            Control globe = Icons.Make(Icons.Globe, 28, UiTheme.TextTertiary);
-            globe.HorizontalAlignment = HorizontalAlignment.Center;
-            TextBlock title = UiTheme.Strong(Loc.T("no_websites_yet"), 15);
-            TextBlock sub = UiTheme.Muted(Loc.T("no_websites_hint"));
-            title.HorizontalAlignment = HorizontalAlignment.Center;
-            sub.HorizontalAlignment = HorizontalAlignment.Center;
-            sub.TextAlignment = TextAlignment.Center;
-            _sitesPanel.Children.Add(UiTheme.Card(UiTheme.VStack(10, globe, title, sub, add), 32));
+            var globe = new Icon(Glyph.Globe, 28, TextTone.Tertiary) { HorizontalAlignment = HorizontalAlignment.Center };
+            _sitesPanel.Children.Add(new Card(
+                Layout.Column(10,
+                    globe,
+                    new TextLine(Loc.T("no_websites_yet"), TextStyle.Label) { Centered = true },
+                    new TextLine(Loc.T("no_websites_hint"), TextStyle.Small) { Centered = true },
+                    add),
+                CardStyle.Surface,
+                CardPadding.Spacious));
             return;
         }
 
@@ -373,21 +298,22 @@ internal sealed partial class MainWindow
             ? BlockedSummary(site)
             : Loc.T("pages_summary", blocked, site.Pages.Count - blocked);
 
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand) };
-        Border mono = UiTheme.Monogram(site.CatalogId, site.DisplayLabel);
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
+        Monogram mono = SiteLook.Monogram(site.CatalogId, site.DisplayLabel);
         mono.Margin = new Thickness(0, 0, 14, 0);
         head.Children.Add(mono);
-        var titles = UiTheme.VStack(2, UiTheme.Strong(site.DisplayLabel, 16), UiTheme.Mono(site.Host, UiTheme.TextTertiary));
+        StackPanel titles = Layout.Column(2, new TextLine(site.DisplayLabel, TextStyle.Subheading), new TextLine(site.Host, TextStyle.Code, TextTone.Tertiary));
         Grid.SetColumn(titles, 1);
         head.Children.Add(titles);
-        TextBlock sum = UiTheme.Muted(summary);
-        sum.Margin = new Thickness(12, 0);
+        var sum = new TextLine(summary, TextStyle.Small) { Margin = new Thickness(Space.S3, 0) };
         Grid.SetColumn(sum, 2);
         head.Children.Add(sum);
-        Control chevron = Icons.Make(open ? Icons.ChevronUp : Icons.ChevronDown, 18, UiTheme.TextTertiary);
+        var chevron = new Icon(open ? Glyph.ChevronUp : Glyph.ChevronDown, 18, TextTone.Tertiary);
         Grid.SetColumn(chevron, 3);
         head.Children.Add(chevron);
-        head.AddHandler(Gestures.TappedEvent, (_, _) =>
+
+        var header = new Pressable(head, new Thickness(Space.S5, Space.S4));
+        header.Click += (_, _) =>
         {
             if (!_openSites.Remove(site))
             {
@@ -395,24 +321,24 @@ internal sealed partial class MainWindow
             }
 
             RebuildSites();
-        });
+        };
 
         var stack = new StackPanel();
-        stack.Children.Add(new Border { Padding = new Thickness(20, 16), Child = head });
+        stack.Children.Add(header);
 
         if (open)
         {
-            stack.Children.Add(UiTheme.Divider());
+            stack.Children.Add(new Divider());
             foreach (EditableConfiguration.EditablePage page in site.Pages)
             {
                 stack.Children.Add(PageRow(site, page));
-                stack.Children.Add(UiTheme.Divider());
+                stack.Children.Add(new Divider());
             }
 
             stack.Children.Add(EverythingElseRow(site));
-            stack.Children.Add(UiTheme.Divider());
+            stack.Children.Add(new Divider());
 
-            PillButton addPage = UiTheme.AccentText_(Loc.T("add_page_on", site.Host), Icons.Plus);
+            var addPage = new PillButton(Loc.T("add_page_on", site.Host), ButtonKind.Accent, Glyph.Plus);
             addPage.Click += (_, _) =>
             {
                 var page = new EditableConfiguration.EditablePage { Name = Loc.T("new_page"), Path = "/", Match = PageMatch.Under, Block = true };
@@ -420,7 +346,7 @@ internal sealed partial class MainWindow
                 _editingPage = page;
                 RebuildSites();
             };
-            PillButton remove = UiTheme.Ghost(Loc.T("remove_site", site.DisplayLabel));
+            var remove = new PillButton(Loc.T("remove_site", site.DisplayLabel), ButtonKind.Ghost);
             remove.Click += (_, _) =>
             {
                 rule.Sites.Remove(site);
@@ -437,31 +363,31 @@ internal sealed partial class MainWindow
             stack.Children.Add(footer);
         }
 
-        Border card = UiTheme.Card(stack, 0);
-        card.ClipToBounds = true;
-        return card;
+        return new Card(stack, CardStyle.Surface, CardPadding.None);
     }
+
+    private static Segmented VerdictSwitch(bool block) => new(
+        new Segment[] { new(Loc.T("block"), Tone.Danger), new(Loc.T("allow"), Tone.Accent) },
+        block ? 0 : 1,
+        stretch: false,
+        height: 36);
 
     private Control PageRow(EditableConfiguration.EditableSite site, EditableConfiguration.EditablePage page)
     {
         bool editing = ReferenceEquals(_editingPage, page);
         bool hit = ReferenceEquals(_testHit, page);
 
-        var nameLine = UiTheme.VStack(4, UiTheme.Strong(page.Name.Length == 0 ? page.Path : page.Name));
+        StackPanel nameLine = Layout.Column(Space.S1, new TextLine(page.Name.Length == 0 ? page.Path : page.Name, TextStyle.Strong));
         if (hit)
         {
-            nameLine.Children.Add(UiTheme.Chip(Loc.T("matches_test"), UiTheme.Ink, UiTheme.InkText));
+            nameLine.Children.Add(new Chip(Loc.T("matches_test"), Tone.Ink));
         }
 
         nameLine.VerticalAlignment = VerticalAlignment.Center;
 
-        var address = UiTheme.VStack(2, UiTheme.Mono(PageAddress(site, page)), UiTheme.Caption(MatchLabel(page)));
+        StackPanel address = Layout.Column(2, new TextLine(PageAddress(site, page), TextStyle.Code), new TextLine(MatchLabel(page), TextStyle.Caption));
 
-        var verdict = new Segmented(
-            new (string, string?)[] { (Loc.T("block"), UiTheme.Danger), (Loc.T("allow"), UiTheme.Accent) },
-            page.Block ? 0 : 1,
-            stretch: false,
-            height: 36);
+        Segmented verdict = VerdictSwitch(page.Block);
         verdict.Changed += i =>
         {
             page.Block = i == 0;
@@ -470,12 +396,7 @@ internal sealed partial class MainWindow
             RefreshTester(updateMarkers: true);
         };
 
-        PillButton edit = UiTheme.IconButton(Icons.Pencil, Loc.T("edit_page"));
-        if (editing)
-        {
-            edit[!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Ink);
-        }
-
+        var edit = new IconButton(Glyph.Pencil, Loc.T("edit_page"), selected: editing);
         edit.Click += (_, _) =>
         {
             _editingPage = editing ? null : page;
@@ -484,66 +405,47 @@ internal sealed partial class MainWindow
         };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,1.2*,Auto,Auto") };
-        nameLine.Margin = new Thickness(0, 0, 12, 0);
+        nameLine.Margin = new Thickness(0, 0, Space.S3, 0);
         grid.Children.Add(nameLine);
-        address.Margin = new Thickness(0, 0, 12, 0);
+        address.Margin = new Thickness(0, 0, Space.S3, 0);
         Grid.SetColumn(address, 1);
         grid.Children.Add(address);
-        verdict.Margin = new Thickness(0, 0, 8, 0);
+        verdict.Margin = new Thickness(0, 0, Space.S2, 0);
         Grid.SetColumn(verdict, 2);
         grid.Children.Add(verdict);
         Grid.SetColumn(edit, 3);
         grid.Children.Add(edit);
 
         var row = new StackPanel();
-        row.Children.Add(new Border { Padding = new Thickness(20, 12), Child = grid });
+        row.Children.Add(new Band(grid, new Thickness(Space.S5, Space.S3)));
         if (editing)
         {
             row.Children.Add(PageEditor(site, page));
         }
 
-        var host = new Border { Child = row, Background = Brushes.Transparent };
-        if (hit)
-        {
-            host[!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.SurfaceAlt);
-        }
-
-        return host;
+        return new Band(row, default, shaded: hit);
     }
 
     private Control PageEditor(EditableConfiguration.EditableSite site, EditableConfiguration.EditablePage page)
     {
-        var name = new TextBox { Text = page.Name };
-        name.TextChanged += (_, _) => page.Name = name.Text ?? "";
+        var name = new TextField(page.Name);
+        name.Changed += text => page.Name = text;
 
-        var path = new TextBox
+        var path = new TextField(page.Path, style: TextFieldStyle.Code, prefix: site.Host);
+        path.Changed += text =>
         {
-            Text = page.Path,
-            FontFamily = new FontFamily(UiTheme.MonoFont),
-            InnerLeftContent = new TextBlock
-            {
-                Text = site.Host,
-                FontFamily = new FontFamily(UiTheme.MonoFont),
-                FontSize = 13,
-                Margin = new Thickness(10, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                [!TextBlock.ForegroundProperty] = UiTheme.Dyn(UiTheme.TextTertiary),
-            },
-        };
-        path.TextChanged += (_, _) =>
-        {
-            page.Path = path.Text ?? "/";
+            page.Path = text;
             RefreshTester(updateMarkers: false);
         };
 
         var fields = new Grid { ColumnDefinitions = new ColumnDefinitions("*,14,1.4*") };
-        fields.Children.Add(UiTheme.VStack(6, FieldLabel(Loc.T("name")), name));
-        Control pathField = UiTheme.VStack(6, FieldLabel(Loc.T("address")), path);
+        fields.Children.Add(Layout.Column(6, FieldLabel(Loc.T("name")), name));
+        Control pathField = Layout.Column(6, FieldLabel(Loc.T("address")), path);
         Grid.SetColumn(pathField, 2);
         fields.Children.Add(pathField);
 
         // Which addresses count
-        var modes = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
+        var modes = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S2, LineSpacing = Space.S2 };
         foreach ((PageMatch mode, string label) in new[]
                  {
                      (PageMatch.Exact, Loc.T("match_exact")),
@@ -551,51 +453,33 @@ internal sealed partial class MainWindow
                      (PageMatch.Prefix, Loc.T("match_prefix")),
                  })
         {
-            modes.Children.Add(OptionButton(label, page.Match == mode, () =>
+            var option = new RadioPill(label, page.Match == mode);
+            option.Click += (_, _) =>
             {
                 page.Match = mode;
                 RebuildSites();
                 RefreshTester(updateMarkers: false);
-            }));
+            };
+            modes.Children.Add(option);
         }
 
         // Query conditions
-        var conditions = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
+        var conditions = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S2, LineSpacing = Space.S2 };
         foreach (EditableConfiguration.EditableCondition condition in page.Conditions.ToList())
         {
-            PillButton remove = UiTheme.IconButton(Icons.Close, Loc.T("remove"));
-            remove.Width = 28;
-            remove.Height = 28;
-            remove.MinHeight = 28;
-            remove.BorderThickness = new Thickness(0);
-            remove.Background = Brushes.Transparent;
-            remove.Click += (_, _) =>
+            var chip = new RemovableChip(condition.Value.Length == 0 ? condition.Key : $"{condition.Key} = {condition.Value}", Loc.T("remove"));
+            chip.Removed += () =>
             {
                 page.Conditions.Remove(condition);
                 RebuildSites();
                 RefreshTester(updateMarkers: true);
             };
-            TextBlock text = UiTheme.Mono(condition.Value.Length == 0 ? condition.Key : $"{condition.Key} = {condition.Value}");
-            conditions.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(12, 2, 2, 2),
-                Child = UiTheme.HStack(4, text, remove),
-                [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface),
-                [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.BorderStrong),
-            });
+            conditions.Children.Add(chip);
         }
 
-        var newCondition = new TextBox
-        {
-            Text = _newCondition,
-            Watermark = Loc.T("condition_hint"),
-            Width = 190,
-            FontFamily = new FontFamily(UiTheme.MonoFont),
-        };
-        newCondition.TextChanged += (_, _) => _newCondition = newCondition.Text ?? "";
-        PillButton addCondition = UiTheme.Secondary(Loc.T("add"));
+        var newCondition = new TextField(_newCondition, Loc.T("condition_hint"), TextFieldStyle.Code) { Width = 190 };
+        newCondition.Changed += text => _newCondition = text;
+        var addCondition = new PillButton(Loc.T("add"));
         void AddCondition()
         {
             string raw = _newCondition.Trim().TrimStart('?');
@@ -613,16 +497,10 @@ internal sealed partial class MainWindow
         }
 
         addCondition.Click += (_, _) => AddCondition();
-        newCondition.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)
-            {
-                AddCondition();
-            }
-        };
-        conditions.Children.Add(UiTheme.HStack(8, newCondition, addCondition));
+        newCondition.Submitted += AddCondition;
+        conditions.Children.Add(Layout.Row(Space.S2, newCondition, addCondition));
 
-        PillButton removePage = UiTheme.DangerText(Loc.T("remove_page"));
+        var removePage = new PillButton(Loc.T("remove_page"), ButtonKind.Danger);
         removePage.Click += (_, _) =>
         {
             site.Pages.Remove(page);
@@ -631,7 +509,7 @@ internal sealed partial class MainWindow
             RebuildSchedule();
             RefreshTester(updateMarkers: true);
         };
-        PillButton done = UiTheme.Primary(Loc.T("done"));
+        var done = new PillButton(Loc.T("done"), ButtonKind.Primary);
         done.Click += (_, _) =>
         {
             _editingPage = null;
@@ -645,50 +523,20 @@ internal sealed partial class MainWindow
         footer.Children.Add(removePage);
         footer.Children.Add(done);
 
-        var panel = UiTheme.VStack(16,
+        StackPanel panel = Layout.Column(Space.S4,
             fields,
-            UiTheme.VStack(8, FieldLabel(Loc.T("which_addresses")), modes),
-            UiTheme.VStack(8, FieldLabel(Loc.T("only_when_contains")), conditions, UiTheme.Caption(Loc.T("conditions_help"))),
+            Layout.Column(Space.S2, FieldLabel(Loc.T("which_addresses")), modes),
+            Layout.Column(Space.S2, FieldLabel(Loc.T("only_when_contains")), conditions, new TextLine(Loc.T("conditions_help"), TextStyle.Caption)),
             footer);
 
-        return new Border
-        {
-            Margin = new Thickness(20, 0, 20, 16),
-            Padding = new Thickness(18),
-            CornerRadius = new CornerRadius(12),
-            BorderThickness = new Thickness(1),
-            Child = panel,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
-        };
+        return new Card(panel, CardStyle.Well, CardPadding.Compact) { Margin = new Thickness(Space.S5, 0, Space.S5, Space.S4) };
     }
 
-    private static TextBlock FieldLabel(string text) => UiTheme.Text(text, 12.5, FontWeight.SemiBold, UiTheme.TextSecondary);
-
-    private static Control OptionButton(string label, bool selected, Action pick)
-    {
-        var b = new Border
-        {
-            MinHeight = 40,
-            Padding = new Thickness(14, 0),
-            CornerRadius = new CornerRadius(9),
-            BorderThickness = new Thickness(selected ? 1.5 : 1),
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Child = UiTheme.Text(label, 13.5, selected ? FontWeight.SemiBold : FontWeight.Normal, UiTheme.TextPrimary),
-            [!Border.BackgroundProperty] = UiTheme.Dyn(selected ? UiTheme.Surface : UiTheme.AppBg),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(selected ? UiTheme.Ink : UiTheme.BorderStrong),
-        };
-        b.AddHandler(Gestures.TappedEvent, (_, _) => pick());
-        return b;
-    }
+    private static TextLine FieldLabel(string text) => new(text, TextStyle.CaptionStrong);
 
     private Control EverythingElseRow(EditableConfiguration.EditableSite site)
     {
-        var verdict = new Segmented(
-            new (string, string?)[] { (Loc.T("block"), UiTheme.Danger), (Loc.T("allow"), UiTheme.Accent) },
-            site.BlockEverythingElse ? 0 : 1,
-            stretch: false,
-            height: 36);
+        Segmented verdict = VerdictSwitch(site.BlockEverythingElse);
         verdict.Changed += i =>
         {
             site.BlockEverythingElse = i == 0;
@@ -698,23 +546,17 @@ internal sealed partial class MainWindow
         };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,1.2*,Auto,40") };
-        Control text = UiTheme.VStack(2, UiTheme.Strong(Loc.T("everything_else")), UiTheme.Caption(Loc.T("everything_else_help", site.Host)));
-        text.Margin = new Thickness(0, 0, 12, 0);
+        StackPanel text = Layout.Column(2, new TextLine(Loc.T("everything_else"), TextStyle.Strong), new TextLine(Loc.T("everything_else_help", site.Host), TextStyle.Caption));
+        text.Margin = new Thickness(0, 0, Space.S3, 0);
         grid.Children.Add(text);
-        TextBlock address = UiTheme.Mono(site.Host + "/…", UiTheme.TextTertiary);
-        address.Margin = new Thickness(0, 0, 12, 0);
+        var address = new TextLine(site.Host + "/…", TextStyle.Code, TextTone.Tertiary) { Margin = new Thickness(0, 0, Space.S3, 0) };
         Grid.SetColumn(address, 1);
         grid.Children.Add(address);
-        verdict.Margin = new Thickness(0, 0, 8, 0);
+        verdict.Margin = new Thickness(0, 0, Space.S2, 0);
         Grid.SetColumn(verdict, 2);
         grid.Children.Add(verdict);
 
-        return new Border
-        {
-            Padding = new Thickness(20, 12),
-            Child = grid,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.SurfaceAlt),
-        };
+        return new Band(grid, new Thickness(Space.S5, Space.S3), shaded: true);
     }
 
     private static string PageAddress(EditableConfiguration.EditableSite site, EditableConfiguration.EditablePage page)
@@ -743,42 +585,26 @@ internal sealed partial class MainWindow
 
     private Control BuildTester()
     {
-        var input = new TextBox
+        var input = new TextField(_testUrl, "instagram.com/?variant=following", TextFieldStyle.Code, leadingGlyph: Glyph.Globe);
+        input.Changed += text =>
         {
-            Text = _testUrl,
-            Watermark = "instagram.com/?variant=following",
-            FontFamily = new FontFamily(UiTheme.MonoFont),
-            InnerLeftContent = new Border { Margin = new Thickness(12, 0, 4, 0), Child = Icons.Make(Icons.Globe, 16, UiTheme.TextTertiary) },
-        };
-        input.TextChanged += (_, _) =>
-        {
-            _testUrl = input.Text ?? "";
+            _testUrl = text;
             RefreshTester(updateMarkers: true);
         };
 
         var samples = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 6, LineSpacing = 6 };
         foreach (string sample in SampleAddresses())
         {
-            var chip = new Border
-            {
-                Height = 32,
-                Padding = new Thickness(10, 0),
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Child = UiTheme.Mono(sample, UiTheme.TextSecondary),
-                [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg),
-                [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
-            };
-            chip.AddHandler(Gestures.TappedEvent, (_, _) => input.Text = sample);
+            var chip = new SuggestionChip(sample);
+            chip.Click += (_, _) => input.Text = sample;
             samples.Children.Add(chip);
         }
 
-        _testResultHost = new Border();
+        _testResultHost = new ContentControl();
         RefreshTester(updateMarkers: false);
 
-        return UiTheme.Card(UiTheme.VStack(12,
-            UiTheme.VStack(4, UiTheme.H2(Loc.T("check_address")), UiTheme.Muted(Loc.T("check_address_help"))),
+        return new Card(Layout.Column(Space.S3,
+            Layout.Column(Space.S1, new TextLine(Loc.T("check_address"), TextStyle.Subheading), new TextLine(Loc.T("check_address_help"), TextStyle.Small)),
             input,
             samples,
             _testResultHost));
@@ -806,55 +632,27 @@ internal sealed partial class MainWindow
             return;
         }
 
-        (string tone, string title, string detail, EditableConfiguration.EditablePage? hit) = EvaluateTest(rule, _testUrl);
+        (Tone? tone, string title, string detail, EditableConfiguration.EditablePage? hit) = EvaluateTest(rule, _testUrl);
         if (updateMarkers && !ReferenceEquals(hit, _testHit))
         {
             _testHit = hit;
             RebuildSites();
         }
 
-        if (tone.Length == 0)
-        {
-            _testResultHost.Child = null;
-            return;
-        }
-
-        (string bg, string fg) = tone switch
-        {
-            "block" => (UiTheme.BlockSoft, UiTheme.Danger),
-            "allow" => (UiTheme.AllowSoft, UiTheme.Accent),
-            _ => (UiTheme.Track, UiTheme.TextSecondary),
-        };
-
-        var dot = UiTheme.Dot(fg, 10);
-        dot.VerticalAlignment = VerticalAlignment.Top;
-        dot.Margin = new Thickness(0, 5, 12, 0);
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        grid.Children.Add(dot);
-        Control text = UiTheme.VStack(3, UiTheme.Text(title, 14, FontWeight.SemiBold, fg), UiTheme.Body(detail));
-        Grid.SetColumn(text, 1);
-        grid.Children.Add(text);
-
-        _testResultHost.Child = new Border
-        {
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(16, 14),
-            Child = grid,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(bg),
-        };
+        _testResultHost.Content = tone is { } t ? new Callout(t, title, detail) : null;
     }
 
-    private static (string Tone, string Title, string Detail, EditableConfiguration.EditablePage? Hit) EvaluateTest(
+    private static (Tone? Tone, string Title, string Detail, EditableConfiguration.EditablePage? Hit) EvaluateTest(
         EditableConfiguration.EditableRule rule, string text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return ("", "", "", null);
+            return (null, "", "", null);
         }
 
         if (!UrlNormalizer.TryNormalize(text, out Uri? uri) || uri is null)
         {
-            return ("none", Loc.T("test_not_address"), Loc.T("test_not_address_help"), null);
+            return (Tone.Neutral, Loc.T("test_not_address"), Loc.T("test_not_address_help"), null);
         }
 
         var results = new List<(EditableConfiguration.EditableSite Site, TargetSite Target, SiteVerdict Verdict)>();
@@ -867,7 +665,7 @@ internal sealed partial class MainWindow
             }
             catch (ConfigurationException ex)
             {
-                return ("none", Loc.T("test_invalid"), ex.Message, null);
+                return (Tone.Neutral, Loc.T("test_invalid"), ex.Message, null);
             }
 
             SiteVerdict verdict = target.Evaluate(uri);
@@ -879,7 +677,7 @@ internal sealed partial class MainWindow
 
         if (results.Count == 0)
         {
-            return ("none", Loc.T("test_not_in_rule"), Loc.T("test_not_in_rule_help"), null);
+            return (Tone.Neutral, Loc.T("test_not_in_rule"), Loc.T("test_not_in_rule_help"), null);
         }
 
         // A site that blocks wins: the rule closes the tab if any of its sites says so.
@@ -890,10 +688,11 @@ internal sealed partial class MainWindow
         string title = decision.Blocks
             ? rule.BlockCompletely ? Loc.T("test_blocked") : Loc.T("test_limited", rule.AllowanceMinutes)
             : Loc.T("test_open");
+        Tone tone = decision.Blocks ? Tone.Danger : Tone.Accent;
 
         if (decision.Page is not { } best)
         {
-            return (decision.Blocks ? "block" : "allow", title, Loc.T("test_rest_decides", editable.DisplayLabel), null);
+            return (tone, title, Loc.T("test_rest_decides", editable.DisplayLabel), null);
         }
 
         string detail = Loc.T("test_matches", best.Name, editable.DisplayLabel);
@@ -905,7 +704,7 @@ internal sealed partial class MainWindow
 
         int index = chosen.Pages.ToList().IndexOf(best);
         EditableConfiguration.EditablePage? hit = index >= 0 && index < editable.Pages.Count ? editable.Pages[index] : null;
-        return (decision.Blocks ? "block" : "allow", title, detail, hit);
+        return (tone, title, detail, hit);
     }
 
     // ----- Save / delete -----

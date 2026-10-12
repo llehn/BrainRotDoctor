@@ -4,12 +4,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
-using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
 using BrainRotDoctor.Core.Configuration;
+using BrainRotDoctor.DesignSystem;
 using System.IO;
 
 namespace BrainRotDoctor.App.Ui;
@@ -77,7 +77,7 @@ internal static class UiSnapshots
         var settings = new UiSettingsStore(Path.Combine(data, "ui-settings.json"));
         AppBuilder.Configure(() => new SnapshotApp(controller, settings, outDir))
             .UsePlatformDetect()
-            .WithInterFont()
+            .UseDesignSystem()
             .StartWithClassicDesktopLifetime(args);
     }
 
@@ -106,9 +106,7 @@ internal static class UiSnapshots
         public override void Initialize()
         {
             Loc.Initialize(Environment.GetEnvironmentVariable("BRD_SNAPSHOT_LANG") ?? "en");
-            Styles.Add(UiTheme.BuildFluentTheme());
-            Styles.Add(UiTheme.BuildStyles());
-            Resources.MergedDictionaries.Add(UiTheme.BuildPalette());
+            DesignTheme.Install(this);
             RequestedThemeVariant = ThemeVariant.Light;
         }
 
@@ -206,6 +204,25 @@ internal static class UiSnapshots
             await Shot("12-strict-running");
             window.PreviewPage("home");
             await Shot("13-home-strict");
+
+            await CaptureGallery("gallery-light", ThemeVariant.Light);
+            await CaptureGallery("gallery-dark", ThemeVariant.Dark);
+        }
+
+        /// <summary>Renders the design system's gallery at full height (not limited by the screen).</summary>
+        private async Task CaptureGallery(string name, ThemeVariant variant)
+        {
+            RequestedThemeVariant = variant;
+            Control gallery = Gallery.Build();
+            gallery.Width = 1200;
+            var window = new AppWindow { Width = 1200, Height = 800, Content = new Canvas { Children = { gallery } } };
+            window.Show();
+            await Task.Delay(1000);
+            var size = new PixelSize((int)gallery.Bounds.Width, (int)gallery.Bounds.Height);
+            using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
+            bitmap.Render(gallery);
+            bitmap.Save(Path.Combine(_outDir, name + ".png"));
+            window.Close();
         }
     }
 }

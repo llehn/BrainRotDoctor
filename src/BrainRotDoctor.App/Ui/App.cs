@@ -2,10 +2,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
-using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.App.Ui.Scene;
+using BrainRotDoctor.DesignSystem;
 
 namespace BrainRotDoctor.App.Ui;
 
@@ -26,9 +26,7 @@ internal sealed class App : Application
     public override void Initialize()
     {
         Loc.Initialize(_settings.LoadLanguage());
-        Styles.Add(UiTheme.BuildFluentTheme());
-        Styles.Add(UiTheme.BuildStyles());
-        Resources.MergedDictionaries.Add(UiTheme.BuildPalette());
+        DesignTheme.Install(this);
         ApplyTheme(_settings.LoadTheme());
     }
 

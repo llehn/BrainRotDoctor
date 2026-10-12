@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The design system: tokens (colour, type, spacing, shape) and every control
+       the app's screens may use. It knows nothing about the product's domain and
+       must never reference BrainRotDoctor.Core or the app. See README.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultXamlItems>false</EnableDefaultXamlItems>
+    <!-- NU1903: a vulnerability in Tmds.DBus.Protocol, a Linux-only transitive
+         dependency of Avalonia that is never loaded on Windows. -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
+  </ItemGroup>
+
+</Project>

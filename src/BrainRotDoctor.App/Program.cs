@@ -3,6 +3,7 @@ using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.App.Runtime.Update;
 using BrainRotDoctor.App.Ui;
 using BrainRotDoctor.Core.Configuration;
+using BrainRotDoctor.DesignSystem;
 using System.IO;
 
 namespace BrainRotDoctor.App;
@@ -150,13 +151,13 @@ internal static class Program
     private static AppBuilder BuildAvaloniaApp(EnforcementController controller, UiSettingsStore uiSettings) =>
         AppBuilder.Configure(() => new BrainRotDoctor.App.Ui.App(controller, uiSettings))
             .UsePlatformDetect()
-            .WithInterFont()
+            .UseDesignSystem()
             .LogToTrace();
 
     private static AppBuilder BuildInstallerApp(InstallOptions options) =>
         AppBuilder.Configure(() => new BrainRotDoctor.App.Ui.InstallerApp(options))
             .UsePlatformDetect()
-            .WithInterFont()
+            .UseDesignSystem()
             .LogToTrace();
 
     private static void RunUninstall(Installer installer, bool silent)

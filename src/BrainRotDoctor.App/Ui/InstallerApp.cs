@@ -2,10 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
-using Avalonia.Media.Imaging;
-using Avalonia.Themes.Fluent;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.App.Runtime.Update;
+using BrainRotDoctor.DesignSystem;
 using System.Diagnostics;
 
 namespace BrainRotDoctor.App.Ui;
@@ -22,9 +21,7 @@ internal sealed class InstallerApp : Application
     public override void Initialize()
     {
         Loc.Initialize(Loc.Auto); // pre-install: follow the Windows language
-        Styles.Add(UiTheme.BuildFluentTheme());
-        Styles.Add(UiTheme.BuildStyles());
-        Resources.MergedDictionaries.Add(UiTheme.BuildPalette());
+        DesignTheme.Install(this);
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -39,7 +36,7 @@ internal sealed class InstallerApp : Application
     }
 }
 
-internal sealed class InstallerWindow : Window
+internal sealed class InstallerWindow : AppWindow
 {
     private readonly InstallOptions _options;
 
@@ -52,8 +49,6 @@ internal sealed class InstallerWindow : Window
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new Avalonia.Media.FontFamily("Inter, $Default");
-        this[!BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg);
 
         var icon = new Image
         {
@@ -63,32 +58,25 @@ internal sealed class InstallerWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
         };
 
-        var install = UiTheme.Primary(Loc.T("install"));
+        var install = new PillButton(Loc.T("install"), ButtonKind.Primary);
         install.Click += (_, _) => DoInstall();
-        var cancel = UiTheme.Ghost(Loc.T("not_now"));
+        var cancel = new PillButton(Loc.T("not_now"), ButtonKind.Ghost);
         cancel.Click += (_, _) => Close();
 
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { cancel, install },
-        };
-
-        var title = UiTheme.H1(Loc.T("install_title"));
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-
-        var body = UiTheme.Muted(Loc.T("install_body"));
-        body.HorizontalAlignment = HorizontalAlignment.Center;
-        body.TextAlignment = Avalonia.Media.TextAlignment.Center;
-        body.MaxWidth = 380;
+        StackPanel actions = Layout.Row(10, cancel, install);
+        actions.HorizontalAlignment = HorizontalAlignment.Right;
 
         Content = new StackPanel
         {
             Margin = new Thickness(28, 26, 28, 22),
-            Spacing = 16,
-            Children = { icon, title, body, actions },
+            Spacing = Space.S4,
+            Children =
+            {
+                icon,
+                new TextLine(Loc.T("install_title"), TextStyle.Title) { Centered = true },
+                new TextLine(Loc.T("install_body"), TextStyle.Small) { Centered = true, MaxWidth = 380 },
+                actions,
+            },
         };
     }
 

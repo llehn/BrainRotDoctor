@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BrainRotDoctor.Core\BrainRotDoctor.Core.csproj" />
+    <ProjectReference Include="..\BrainRotDoctor.DesignSystem\BrainRotDoctor.DesignSystem.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

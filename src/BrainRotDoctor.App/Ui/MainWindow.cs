@@ -1,22 +1,19 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Input;
-using Avalonia.Layout;
-using Avalonia.Media;
 using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
+using BrainRotDoctor.DesignSystem;
 
 namespace BrainRotDoctor.App.Ui;
 
 /// <summary>
 /// The main window. Rules, Strict mode and Settings live next to a sidebar;
 /// editing a rule and adding websites take over the whole window. The UI is
-/// built in code and rebuilt per screen; live numbers (time left, countdowns)
-/// update in place from the enforcement status.
+/// built in code from the design system's controls and rebuilt per screen;
+/// live numbers (time left, countdowns) update in place from the enforcement status.
 /// </summary>
-internal sealed partial class MainWindow : Window
+internal sealed partial class MainWindow : AppWindow
 {
     private enum Page { Home, Editor, AddSites, Strict, Settings }
 
@@ -58,8 +55,6 @@ internal sealed partial class MainWindow : Window
         MinWidth = 1000;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Inter, $Default");
-        this[!BackgroundProperty] = UiTheme.Dyn(UiTheme.AppBg);
         Content = _host;
 
         Navigate(_status.StrictMode.IsActive ? Page.Strict : Page.Home);
@@ -146,253 +141,55 @@ internal sealed partial class MainWindow : Window
 
     private Control WithSidebar(Control content)
     {
-        var nav = new StackPanel { Spacing = 4 };
+        var nav = new StackPanel { Spacing = Space.S1 };
         nav.Children.Add(Brand());
-        nav.Children.Add(NavItem(Icons.Rules, Loc.T("rules"), Page.Home, badge: null));
-        nav.Children.Add(NavItem(Icons.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
-        nav.Children.Add(NavItem(Icons.Settings, Loc.T("settings"), Page.Settings, badge: null));
-
-        Control status = StatusCard();
-        var side = new DockPanel { LastChildFill = false };
-        DockPanel.SetDock(nav, Dock.Top);
-        DockPanel.SetDock(status, Dock.Bottom);
-        side.Children.Add(nav);
-        side.Children.Add(status);
-
-        var sidebar = new Border
-        {
-            Width = 236,
-            Padding = new Thickness(14, 20, 14, 16),
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            Child = side,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Sidebar),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
-        };
-
-        var scroll = new ScrollViewer
-        {
-            Content = new Border { Padding = new Thickness(40, 32, 40, 40), Child = content },
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        };
-
-        var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(sidebar, Dock.Left);
-        root.Children.Add(sidebar);
-        root.Children.Add(scroll);
-        return root;
+        nav.Children.Add(NavTo(Glyph.List, Loc.T("rules"), Page.Home, badge: null));
+        nav.Children.Add(NavTo(Glyph.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
+        nav.Children.Add(NavTo(Glyph.Gear, Loc.T("settings"), Page.Settings, badge: null));
+        return new SidebarLayout(nav, StatusCard(), content);
     }
 
     private static Control Brand()
     {
         var logo = new Image { Source = ProductIcon.At(64), Width = 32, Height = 32 };
-        StackPanel row = UiTheme.HStack(10, logo, UiTheme.Strong("BrainRotDoctor", 15));
-        row.Margin = new Thickness(8, 2, 8, 20);
+        StackPanel row = Layout.Row(10, logo, new TextLine("BrainRotDoctor", TextStyle.Label));
+        row.Margin = new Thickness(Space.S2, 2, Space.S2, Space.S5);
         return row;
     }
 
-    private Control NavItem(string icon, string text, Page target, string? badge)
+    private Control NavTo(string glyph, string text, Page target, string? badge)
     {
         bool active = _page == target || (target == Page.Home && _page is Page.Editor or Page.AddSites);
-        var label = UiTheme.Text(text, 14, active ? FontWeight.SemiBold : FontWeight.Medium, active ? UiTheme.TextPrimary : UiTheme.TextSecondary);
-        var row = new DockPanel { LastChildFill = true };
-        Control glyph = Icons.Make(icon, 18, active ? UiTheme.TextPrimary : UiTheme.TextSecondary);
-        glyph.Margin = new Thickness(0, 0, 10, 0);
-        DockPanel.SetDock(glyph, Dock.Left);
-        row.Children.Add(glyph);
-        if (badge is not null)
-        {
-            Border chip = UiTheme.Chip(badge, UiTheme.Ink, UiTheme.InkText);
-            DockPanel.SetDock(chip, Dock.Right);
-            row.Children.Add(chip);
-        }
-
-        row.Children.Add(label);
-
-        var item = new Border
-        {
-            Height = 40,
-            Padding = new Thickness(12, 0),
-            CornerRadius = new CornerRadius(9),
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Background = Brushes.Transparent,
-            Child = row,
-        };
-        if (active)
-        {
-            item[!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface);
-        }
-
-        item.AddHandler(Gestures.TappedEvent, (_, _) => Navigate(target));
+        var item = new NavItem(glyph, text, active, badge);
+        item.Click += (_, _) => Navigate(target);
         return item;
     }
 
     private Control StatusCard()
     {
-        var dot = UiTheme.Dot(UiTheme.Success);
-        var title = UiTheme.Strong("", 14);
-        var sub = UiTheme.Muted("");
-        var card = new Border
-        {
-            CornerRadius = new CornerRadius(12),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(14),
-            Child = UiTheme.VStack(4, UiTheme.HStack(8, dot, title), sub),
-        };
-
+        var panel = new StatusPanel();
         _live.Add(status =>
         {
-            string dotKey;
-            string bg = UiTheme.Surface;
-            string fg = UiTheme.TextPrimary;
-            string subFg = UiTheme.TextSecondary;
             if (status.StrictMode.IsActive)
             {
-                (dotKey, bg, fg, subFg) = (UiTheme.InkText, UiTheme.Ink, UiTheme.InkText, UiTheme.InkText);
-                title.Text = Loc.T("strict_mode");
-                sub.Text = Loc.T("time_left", FormatSpan(status.StrictMode.Remaining));
+                panel.SetState(Tone.Ink, Loc.T("strict_mode"), Loc.T("time_left", FormatSpan(status.StrictMode.Remaining)), inverted: true);
             }
             else if (status.Pause is { } pause)
             {
-                dotKey = UiTheme.Warn;
-                title.Text = Loc.T("paused");
-                sub.Text = PauseUntilText(pause);
+                panel.SetState(Tone.Warn, Loc.T("paused"), PauseUntilText(pause), inverted: false);
             }
             else if (status.LastError is not null)
             {
-                dotKey = UiTheme.Warn;
-                title.Text = Loc.T("attention");
-                sub.Text = status.LastError;
+                panel.SetState(Tone.Warn, Loc.T("attention"), status.LastError, inverted: false);
             }
             else
             {
-                dotKey = UiTheme.Success;
-                title.Text = Loc.T("protected");
                 int active = status.Rules.Count(r => r.IsActive);
-                sub.Text = Loc.T("rules_active_now", active, status.Rules.Count);
+                panel.SetState(Tone.Success, Loc.T("protected"), Loc.T("rules_active_now", active, status.Rules.Count), inverted: false);
             }
-
-            dot[!Border.BackgroundProperty] = UiTheme.Dyn(dotKey);
-            card[!Border.BackgroundProperty] = UiTheme.Dyn(bg);
-            card[!Border.BorderBrushProperty] = UiTheme.Dyn(status.StrictMode.IsActive ? UiTheme.Ink : UiTheme.Border_);
-            title[!TextBlock.ForegroundProperty] = UiTheme.Dyn(fg);
-            sub[!TextBlock.ForegroundProperty] = UiTheme.Dyn(subFg);
-            sub.Opacity = status.StrictMode.IsActive ? 0.75 : 1;
         });
 
-        return card;
-    }
-
-    // ---------- Shared page chrome ----------
-
-    /// <summary>A page title with an optional subtitle and right-aligned actions that wrap below when narrow.</summary>
-    private static Control PageHeader(string title, string? subtitle, Control? actions)
-    {
-        var text = UiTheme.VStack(6, UiTheme.H1(title));
-        if (subtitle is not null)
-        {
-            TextBlock sub = UiTheme.Muted(subtitle);
-            sub.FontSize = 14;
-            sub.MaxWidth = 640;
-            sub.HorizontalAlignment = HorizontalAlignment.Left;
-            text.Children.Add(sub);
-        }
-
-        if (actions is null)
-        {
-            return text;
-        }
-
-        actions.VerticalAlignment = VerticalAlignment.Bottom;
-        actions.Margin = new Thickness(16, 0, 0, 0);
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        grid.Children.Add(text);
-        Grid.SetColumn(actions, 1);
-        grid.Children.Add(actions);
-        return grid;
-    }
-
-    /// <summary>The top bar of a full-window screen: back link, title area, actions.</summary>
-    private static Control FullScreenBar(Control back, Control middle, Control actions)
-    {
-        var divider = new Border { Width = 1, Height = 24, Margin = new Thickness(4, 0, 12, 0), [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Border_) };
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
-        grid.Children.Add(back);
-        Grid.SetColumn(divider, 1);
-        grid.Children.Add(divider);
-        middle.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetColumn(middle, 2);
-        grid.Children.Add(middle);
-        actions.Margin = new Thickness(12, 0, 0, 0);
-        Grid.SetColumn(actions, 3);
-        grid.Children.Add(actions);
-
-        return new Border
-        {
-            Padding = new Thickness(24, 12),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = grid,
-            [!Border.BackgroundProperty] = UiTheme.Dyn(UiTheme.Surface),
-            [!Border.BorderBrushProperty] = UiTheme.Dyn(UiTheme.Border_),
-        };
-    }
-
-    private static Control FullScreen(Control bar, Control body)
-    {
-        var scroll = new ScrollViewer
-        {
-            Content = new Border
-            {
-                Padding = new Thickness(32, 28, 32, 48),
-                MaxWidth = 1280,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Child = body,
-            },
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        };
-
-        var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(bar, Dock.Top);
-        root.Children.Add(bar);
-        root.Children.Add(scroll);
-        return root;
-    }
-
-    /// <summary>
-    /// Two columns side by side, always: the window's minimum size keeps both
-    /// readable. <paramref name="fixedWidth"/> sizes the left column, or the right
-    /// one when <paramref name="fixedRight"/> is set; the other takes the rest.
-    /// </summary>
-    private static Control Columns(Control left, Control right, double fixedWidth, double gap = 24, bool fixedRight = false)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(fixedRight ? $"*,{gap},{fixedWidth}" : $"{fixedWidth},{gap},*") };
-        left.VerticalAlignment = VerticalAlignment.Top;
-        right.VerticalAlignment = VerticalAlignment.Top;
-        grid.Children.Add(left);
-        Grid.SetColumn(right, 2);
-        grid.Children.Add(right);
-        return grid;
-    }
-
-    /// <summary>A wrap of equal-width tiles whose count per row follows the available width.</summary>
-    private static Control TileGrid(IReadOnlyList<Control> tiles, double minTileWidth, double gap)
-    {
-        var wrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = gap, LineSpacing = gap };
-        foreach (Control tile in tiles)
-        {
-            wrap.Children.Add(tile);
-        }
-
-        wrap.SizeChanged += (_, e) =>
-        {
-            double width = e.NewSize.Width;
-            int columns = Math.Max(1, (int)((width + gap) / (minTileWidth + gap)));
-            double tileWidth = Math.Floor((width - gap * (columns - 1)) / columns) - 0.5;
-            foreach (Control tile in wrap.Children)
-            {
-                tile.Width = Math.Max(minTileWidth * 0.6, tileWidth);
-            }
-        };
-        return wrap;
+        return panel;
     }
 
     // ---------- Formatting ----------
