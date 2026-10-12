@@ -105,7 +105,7 @@ internal sealed partial class MainWindow
             body.Children.Add(ErrorBanner(_editorError));
         }
 
-        body.Children.Add(Columns(_scheduleHost, BuildWhatColumn(), 340, 940));
+        body.Children.Add(Columns(_scheduleHost, BuildWhatColumn(), 340));
         return FullScreen(FullScreenBar(back, name, actions), body);
     }
 
@@ -152,9 +152,12 @@ internal sealed partial class MainWindow
         var activeSection = UiTheme.VStack(10, UiTheme.SectionLabel(Loc.T("active")), active);
         if (!rule.AllDay)
         {
-            activeSection.Children.Add(UiTheme.HStack(10,
-                LabeledTime(Loc.T("from"), rule.From, t => { rule.From = t; RebuildSchedule(); }),
-                LabeledTime(Loc.T("to"), rule.To, t => { rule.To = t; RebuildSchedule(); })));
+            var hours = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,*") };
+            hours.Children.Add(LabeledTime(Loc.T("from"), rule.From, t => { rule.From = t; RebuildSchedule(); }));
+            Control to = LabeledTime(Loc.T("to"), rule.To, t => { rule.To = t; RebuildSchedule(); });
+            Grid.SetColumn(to, 2);
+            hours.Children.Add(to);
+            activeSection.Children.Add(hours);
             if (rule.To <= rule.From)
             {
                 activeSection.Children.Add(UiTheme.Muted(Loc.T("runs_overnight")));
@@ -231,22 +234,9 @@ internal sealed partial class MainWindow
 
     private static Control LabeledTime(string label, TimeOnly value, Action<TimeOnly> changed)
     {
-        var box = new TextBox { Text = value.ToString("HH:mm"), Width = 96, Watermark = "23:00", FontSize = 15 };
-        box.LostFocus += (_, _) =>
-        {
-            if (TimeOnly.TryParse(box.Text, System.Globalization.CultureInfo.InvariantCulture, out TimeOnly t))
-            {
-                if (t != value)
-                {
-                    changed(t);
-                }
-            }
-            else
-            {
-                box.Text = value.ToString("HH:mm");
-            }
-        };
-        return UiTheme.VStack(5, UiTheme.Caption(label), box);
+        var field = new TimeField(value);
+        field.Changed += changed;
+        return UiTheme.VStack(5, UiTheme.Caption(label), field);
     }
 
     private Control DayPreset(string label, IEnumerable<DayOfWeek> days)

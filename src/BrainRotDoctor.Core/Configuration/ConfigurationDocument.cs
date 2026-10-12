@@ -12,6 +12,7 @@ namespace BrainRotDoctor.Core.Configuration;
 ///   "rules": [
 ///     {
 ///       "id": "feeds", "name": "Feeds",
+///       "enabled": false,               // omit when the rule is on
 ///       "allowanceMinutes": 5,          // omit to block completely
 ///       "allDay": true,                 // or false with "from"/"to"
 ///       "days": ["Monday"],             // omit for every day
@@ -79,6 +80,10 @@ public sealed class RuleDocument
 {
     public string? Id { get; set; }
     public string? Name { get; set; }
+
+    /// <summary>False switches the rule off; omitted means on.</summary>
+    public bool? Enabled { get; set; }
+
     public int? AllowanceMinutes { get; set; }
     public bool? AllDay { get; set; }
     public string? From { get; set; }

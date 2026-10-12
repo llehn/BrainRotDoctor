@@ -536,3 +536,67 @@ internal sealed class Segmented : Border
         }
     }
 }
+
+/// <summary>
+/// An on/off switch: teal track with the knob right when on, grey with the knob
+/// left when off. Taps on it never reach the control underneath.
+/// </summary>
+internal sealed class OnOffSwitch : Border
+{
+    private readonly Border _knob;
+    private bool _enabled = true;
+
+    public OnOffSwitch(bool isOn)
+    {
+        IsOn = isOn;
+        Width = 40;
+        Height = 22;
+        CornerRadius = new CornerRadius(11);
+        Padding = new Thickness(3);
+        VerticalAlignment = VerticalAlignment.Center;
+        Cursor = new Cursor(StandardCursorType.Hand);
+        _knob = new Border
+        {
+            Width = 16,
+            Height = 16,
+            CornerRadius = new CornerRadius(8),
+            Background = Brushes.White,
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetY = 1, Blur = 2, Color = Color.FromArgb(50, 0, 0, 0) }),
+        };
+        Child = _knob;
+        Paint();
+
+        AddHandler(Gestures.TappedEvent, (_, e) =>
+        {
+            e.Handled = true;
+            if (_enabled)
+            {
+                IsOn = !IsOn;
+                Paint();
+                Toggled?.Invoke(IsOn);
+            }
+        });
+    }
+
+    public event Action<bool>? Toggled;
+
+    public bool IsOn { get; private set; }
+
+    /// <summary>Greys the switch out and ignores taps (kept hit-testable for its tooltip).</summary>
+    public bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            _enabled = value;
+            Opacity = value ? 1 : 0.45;
+            Cursor = new Cursor(value ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        }
+    }
+
+    private void Paint()
+    {
+        _knob.HorizontalAlignment = IsOn ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        this[!BackgroundProperty] = UiTheme.Dyn(IsOn ? UiTheme.Accent : UiTheme.BorderStrong);
+    }
+}

@@ -60,8 +60,11 @@ internal sealed partial class MainWindow
 
     private Control BuildStrictSetup()
     {
-        _strictRules ??= _editable.Rules.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
-        _strictRules.IntersectWith(_editable.Rules.Select(r => r.Id));
+        // Only rules that are switched on can be locked: locking one that's off
+        // would either do nothing or surprise the user by blocking.
+        List<EditableConfiguration.EditableRule> lockable = _editable.Rules.Where(r => r.Enabled).ToList();
+        _strictRules ??= lockable.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+        _strictRules.IntersectWith(lockable.Select(r => r.Id));
 
         var page = new StackPanel { Spacing = 24 };
         page.Children.Add(PageHeader(Loc.T("strict_mode"), Loc.T("strict_subtitle"), null));
@@ -158,7 +161,7 @@ internal sealed partial class MainWindow
         // Which rules
         var ruleList = UiTheme.VStack(8,
             UiTheme.VStack(4, UiTheme.H2(Loc.T("which_rules")), UiTheme.Muted(Loc.T("which_rules_help"))));
-        foreach (EditableConfiguration.EditableRule rule in _editable.Rules)
+        foreach (EditableConfiguration.EditableRule rule in lockable)
         {
             var box = new CheckBox { IsChecked = _strictRules.Contains(rule.Id), VerticalAlignment = VerticalAlignment.Center };
             box.IsCheckedChanged += (_, _) =>
@@ -201,6 +204,10 @@ internal sealed partial class MainWindow
         if (_editable.Rules.Count == 0)
         {
             ruleList.Children.Add(UiTheme.Muted(Loc.T("no_rules_to_lock")));
+        }
+        else if (lockable.Count == 0)
+        {
+            ruleList.Children.Add(UiTheme.Muted(Loc.T("no_rules_on")));
         }
 
         Control leftColumn = UiTheme.VStack(20, howLong, UiTheme.Card(ruleList, 22));
@@ -252,7 +259,7 @@ internal sealed partial class MainWindow
         };
 
         Refresh();
-        page.Children.Add(Columns(leftColumn, UiTheme.VStack(16, whileOn, confirm), 300, 760, gap: 20, fixedRight: true));
+        page.Children.Add(Columns(leftColumn, UiTheme.VStack(16, whileOn, confirm), 300, gap: 20, fixedRight: true));
         return page;
     }
 
@@ -368,7 +375,7 @@ internal sealed partial class MainWindow
 
         var page = new StackPanel { Spacing = 24 };
         page.Children.Add(hero);
-        page.Children.Add(Columns(UiTheme.Card(locked, 22), stillCan, 290, 740, gap: 20, fixedRight: true));
+        page.Children.Add(Columns(UiTheme.Card(locked, 22), stillCan, 290, gap: 20, fixedRight: true));
         return page;
     }
 }

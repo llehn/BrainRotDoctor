@@ -53,7 +53,9 @@ internal sealed partial class MainWindow : Window
         Title = "BrainRotDoctor";
         Width = 1120;
         Height = 760;
-        MinWidth = 820;
+        // Wide enough for every two-pane screen (strict mode setup is the widest)
+        // to stay side by side; there is no stacked layout.
+        MinWidth = 1000;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Inter, $Default");
@@ -356,50 +358,18 @@ internal sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Two columns side by side when the window is wide enough, stacked otherwise.
-    /// <paramref name="fixedWidth"/> sizes the left column, or the right one when
-    /// <paramref name="fixedRight"/> is set; the other takes the rest.
+    /// Two columns side by side, always: the window's minimum size keeps both
+    /// readable. <paramref name="fixedWidth"/> sizes the left column, or the right
+    /// one when <paramref name="fixedRight"/> is set; the other takes the rest.
     /// </summary>
-    private static Control Columns(Control left, Control right, double fixedWidth, double breakpoint, double gap = 24, bool fixedRight = false)
+    private static Control Columns(Control left, Control right, double fixedWidth, double gap = 24, bool fixedRight = false)
     {
-        var grid = new Grid();
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(fixedRight ? $"*,{gap},{fixedWidth}" : $"{fixedWidth},{gap},*") };
         left.VerticalAlignment = VerticalAlignment.Top;
         right.VerticalAlignment = VerticalAlignment.Top;
         grid.Children.Add(left);
+        Grid.SetColumn(right, 2);
         grid.Children.Add(right);
-
-        bool? wide = null;
-        void Layout(double width)
-        {
-            bool isWide = width >= breakpoint;
-            if (wide == isWide)
-            {
-                return;
-            }
-
-            wide = isWide;
-            grid.ColumnDefinitions.Clear();
-            grid.RowDefinitions.Clear();
-            if (isWide)
-            {
-                grid.ColumnDefinitions = new ColumnDefinitions(fixedRight ? $"*,{gap},{fixedWidth}" : $"{fixedWidth},{gap},*");
-                Grid.SetColumn(left, 0);
-                Grid.SetRow(left, 0);
-                Grid.SetColumn(right, 2);
-                Grid.SetRow(right, 0);
-            }
-            else
-            {
-                grid.RowDefinitions = new RowDefinitions($"Auto,{gap},Auto");
-                Grid.SetColumn(left, 0);
-                Grid.SetRow(left, 0);
-                Grid.SetColumn(right, 0);
-                Grid.SetRow(right, 2);
-            }
-        }
-
-        Layout(breakpoint);
-        grid.SizeChanged += (_, e) => Layout(e.NewSize.Width);
         return grid;
     }
 

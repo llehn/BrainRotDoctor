@@ -14,6 +14,7 @@ internal static partial class Strings
     {
         Dictionary<string, Dictionary<string, string>> tables = BuildBaseTables();
         MergeRedesign(tables);
+        MergeRuleSwitch(tables);
         return tables;
     }
 

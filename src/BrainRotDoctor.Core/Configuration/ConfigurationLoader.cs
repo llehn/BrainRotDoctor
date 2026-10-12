@@ -12,10 +12,22 @@ public static class ConfigurationLoader
     public static BlockerConfiguration Load(ConfigurationDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // Switched-off rules are still validated (and keep their id taken) but
+        // don't take part in enforcement.
         var rules = new List<Rule>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (RuleDocument rule in document.Rules ?? new())
         {
-            rules.Add(MapRule(rule));
+            Rule mapped = MapRule(rule);
+            if (!ids.Add(mapped.Id))
+            {
+                throw new ConfigurationException($"Duplicate rule id '{mapped.Id}'.");
+            }
+
+            if (rule.Enabled != false)
+            {
+                rules.Add(mapped);
+            }
         }
 
         return new BlockerConfiguration(rules);

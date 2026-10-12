@@ -64,7 +64,7 @@ internal sealed partial class MainWindow
         Control left = UiTheme.VStack(18, search, _tilesHost, CustomSiteCard());
         return FullScreen(
             FullScreenBar(back, UiTheme.Text(Loc.T("add_websites"), 20, FontWeight.SemiBold, UiTheme.TextPrimary), UiTheme.HStack(10, cancel, _addButton)),
-            Columns(left, _pickedHost, 320, 940, fixedRight: true));
+            Columns(left, _pickedHost, 320, fixedRight: true));
     }
 
     private void RebuildTiles()

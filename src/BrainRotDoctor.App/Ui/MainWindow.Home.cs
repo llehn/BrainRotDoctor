@@ -161,8 +161,17 @@ internal sealed partial class MainWindow
         bool locked = _status.StrictMode.IsLocked(rule.Id);
 
         Border chip = UiTheme.Chip("", UiTheme.Track, UiTheme.TextSecondary);
+        var onOff = new OnOffSwitch(rule.Enabled) { Margin = new Thickness(10, 0, 0, 0) };
+        if (locked)
+        {
+            onOff.Enabled = false;
+        }
+
+        onOff.Toggled += on => SetRuleEnabled(index, on);
         var title = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(onOff, Dock.Right);
         DockPanel.SetDock(chip, Dock.Right);
+        title.Children.Add(onOff);
         title.Children.Add(chip);
         var name = UiTheme.Text(string.IsNullOrWhiteSpace(rule.Name) ? Loc.T("untitled") : rule.Name, 17, FontWeight.SemiBold, UiTheme.TextPrimary);
         name.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -190,7 +199,13 @@ internal sealed partial class MainWindow
         }
 
         var footer = new StackPanel { Spacing = 7 };
-        var top = UiTheme.VStack(12, title, UiTheme.Muted(ConditionSummary(rule)), sites);
+        var details = UiTheme.VStack(12, UiTheme.Muted(ConditionSummary(rule)), sites);
+        if (!rule.Enabled)
+        {
+            details.Opacity = 0.5;
+        }
+
+        var top = UiTheme.VStack(12, title, details);
         var body = new DockPanel { LastChildFill = false };
         DockPanel.SetDock(top, Dock.Top);
         DockPanel.SetDock(footer, Dock.Bottom);
@@ -233,9 +248,26 @@ internal sealed partial class MainWindow
         };
     }
 
+    private void SetRuleEnabled(int index, bool on)
+    {
+        EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
+        if (index < candidate.Rules.Count)
+        {
+            candidate.Rules[index].Enabled = on;
+            if (_controller.TrySaveConfiguration(candidate, out _))
+            {
+                _editable = _controller.GetEditableConfiguration();
+            }
+        }
+
+        Rerender();
+    }
+
     private static void UpdateRuleChip(Border chip, EditableConfiguration.EditableRule rule, RuleSnapshot? s, bool paused)
     {
-        (string text, string bg, string fg) = paused
+        (string text, string bg, string fg) = !rule.Enabled
+            ? (Loc.T("rule_off"), UiTheme.Track, UiTheme.TextSecondary)
+            : paused
             ? (Loc.T("paused"), UiTheme.WarnSoft, UiTheme.WarnText)
             : s is null || !s.IsActive
                 ? (Loc.T("off_hours"), UiTheme.Track, UiTheme.TextSecondary)
@@ -254,7 +286,11 @@ internal sealed partial class MainWindow
     private static void UpdateRuleFooter(StackPanel footer, EditableConfiguration.EditableRule rule, RuleSnapshot? s, AppStatus status, bool locked)
     {
         footer.Children.Clear();
-        if (s is not null && s.IsActive && !s.BlocksCompletely)
+        if (!rule.Enabled)
+        {
+            footer.Children.Add(UiTheme.Caption(Loc.T("rule_switched_off")));
+        }
+        else if (s is not null && s.IsActive && !s.BlocksCompletely)
         {
             double used = Math.Min(s.Consumed.TotalMinutes, s.Allowance.TotalMinutes);
             bool spent = s.IsBlocking;

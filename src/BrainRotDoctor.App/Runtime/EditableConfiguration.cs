@@ -45,13 +45,18 @@ internal sealed class EditableConfiguration
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
+        public bool Enabled { get; set; } = true;
 
         public bool BlockCompletely { get; set; }
         public int AllowanceMinutes { get; set; } = 5;
 
+        // The hours offered when switching from "all day" to set hours.
+        private static readonly TimeOnly DefaultFrom = new(9, 0);
+        private static readonly TimeOnly DefaultTo = new(17, 0);
+
         public bool AllDay { get; set; } = true;
-        public TimeOnly From { get; set; } = new(23, 0);
-        public TimeOnly To { get; set; } = new(7, 0);
+        public TimeOnly From { get; set; } = DefaultFrom;
+        public TimeOnly To { get; set; } = DefaultTo;
         public HashSet<DayOfWeek> Days { get; set; } = new(AllDays);
 
         public List<EditableSite> Sites { get; } = new();
@@ -65,11 +70,12 @@ internal sealed class EditableConfiguration
             {
                 Id = dto.Id ?? "",
                 Name = dto.Name ?? dto.Id ?? "",
+                Enabled = dto.Enabled ?? true,
                 BlockCompletely = dto.AllowanceMinutes is null,
                 AllowanceMinutes = dto.AllowanceMinutes is { } m ? Math.Clamp(m, 1, 59) : 5,
                 AllDay = dto.AllDay ?? (dto.From is null && dto.To is null),
-                From = ParseTime(dto.From, new TimeOnly(23, 0)),
-                To = ParseTime(dto.To, new TimeOnly(7, 0)),
+                From = ParseTime(dto.From, DefaultFrom),
+                To = ParseTime(dto.To, DefaultTo),
                 Days = ParseDays(dto.Days),
             };
 
@@ -95,6 +101,7 @@ internal sealed class EditableConfiguration
         {
             Id = Id.Trim(),
             Name = Name.Trim(),
+            Enabled = Enabled ? null : false,
             AllowanceMinutes = BlockCompletely ? null : Math.Clamp(AllowanceMinutes, 1, 59),
             AllDay = AllDay,
             From = AllDay ? null : From.ToString("HH:mm"),

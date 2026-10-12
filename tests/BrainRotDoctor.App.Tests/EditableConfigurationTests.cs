@@ -55,6 +55,30 @@ public sealed class EditableConfigurationTests
     }
 
     [Fact]
+    public void Switching_a_rule_off_round_trips_and_leaves_on_rules_clean()
+    {
+        EditableConfiguration editable = EditableConfiguration.FromJson("""
+        { "rules": [ { "id": "r", "name": "R", "allowanceMinutes": 5, "allDay": true,
+            "sites": [ { "label": "Reels", "url": "instagram.com/reels" } ] } ] }
+        """);
+
+        Assert.True(editable.Rules[0].Enabled);
+        Assert.DoesNotContain("enabled", editable.ToJson());
+
+        editable.Rules[0].Enabled = false;
+        EditableConfiguration reloaded = EditableConfiguration.FromJson(editable.ToJson());
+        Assert.False(reloaded.Rules[0].Enabled);
+        Assert.Empty(reloaded.ToBlockerConfiguration().Rules);
+    }
+
+    [Fact]
+    public void Set_hours_start_as_a_daytime_window()
+    {
+        var rule = new EditableConfiguration.EditableRule();
+        Assert.True(rule.From < rule.To);
+    }
+
+    [Fact]
     public void Editing_a_site_url_changes_what_is_matched()
     {
         EditableConfiguration editable = EditableConfiguration.FromJson("""

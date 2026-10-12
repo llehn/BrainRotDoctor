@@ -32,6 +32,27 @@ public class ConfigurationLoaderTests
     }
 
     [Fact]
+    public void Switched_off_rules_are_validated_but_not_enforced()
+    {
+        const string json = """
+        {
+          "rules": [
+            { "id": "on", "allDay": true, "sites": [ { "label": "Instagram", "url": "instagram.com" } ] },
+            { "id": "off", "enabled": false, "allDay": true, "sites": [ { "label": "TikTok", "url": "tiktok.com" } ] }
+          ]
+        }
+        """;
+
+        Rule rule = Assert.Single(ConfigurationLoader.Load(json).Rules);
+        Assert.Equal("on", rule.Id);
+
+        Assert.Throws<ConfigurationException>(() => ConfigurationLoader.Load(
+            """{ "rules": [ { "id": "off", "enabled": false, "allDay": false, "from": "09:00", "to": "09:00", "sites": [ { "label": "X", "url": "x.com" } ] } ] }"""));
+        Assert.Throws<ConfigurationException>(() => ConfigurationLoader.Load(
+            """{ "rules": [ { "id": "a", "sites": [ { "label": "X", "url": "x.com" } ] }, { "id": "a", "enabled": false, "sites": [ { "label": "X", "url": "x.com" } ] } ] }"""));
+    }
+
+    [Fact]
     public void Loads_a_block_completely_windowed_rule()
     {
         const string json = """

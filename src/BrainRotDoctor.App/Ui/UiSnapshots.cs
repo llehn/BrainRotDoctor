@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
 using BrainRotDoctor.Core.Configuration;
@@ -36,6 +37,7 @@ internal static class UiSnapshots
         {
             Id = "night",
             Name = "Night shutdown",
+            Enabled = false,
             AllDay = false,
             From = "23:00",
             To = "07:00",
@@ -160,7 +162,24 @@ internal static class UiSnapshots
             await Shot("04-editor-short-video", 1700);
 
             window.PreviewEditor(1, "instagram.com/?variant=following", null);
-            await Shot("05-editor-narrow", 1500, 840);
+            await Shot("05-editor-narrow", 1500, 1000);
+
+            window.PreviewEditor(2, "", null);
+            await Shot("05b-editor-set-hours-narrow", 1100, 1000);
+            if (window.GetVisualDescendants().OfType<TimeField>().FirstOrDefault() is { } time)
+            {
+                Control picker = time.Open();
+                await Task.Delay(700);
+                if (TopLevel.GetTopLevel(picker) is { } popup)
+                {
+                    var popupSize = new PixelSize((int)popup.Bounds.Width, (int)popup.Bounds.Height);
+                    using var popupBitmap = new RenderTargetBitmap(popupSize, new Vector(96, 96));
+                    popupBitmap.Render(popup);
+                    popupBitmap.Save(Path.Combine(_outDir, "05c-time-picker.png"));
+                }
+
+                window.PreviewPage("home");
+            }
 
             window.PreviewNewRule();
             await Shot("06-editor-new-rule");
@@ -170,6 +189,7 @@ internal static class UiSnapshots
 
             window.PreviewPage("strict");
             await Shot("08-strict-setup", 900);
+            await Shot("08b-strict-setup-narrow", 900, 1000);
 
             window.PreviewPage("settings");
             await Shot("09-settings");
