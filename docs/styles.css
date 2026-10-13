@@ -100,3 +100,109 @@ h2 { font-size: clamp(2rem, 4.6vw, 3.2rem); line-height: 1.05; }
 .closer .wrap { display: grid; gap: 28px; justify-items: start; }
 
 .footer { padding-block: 24px 40px; border-top: 1px solid var(--line); font-size: .9rem; color: var(--fg-3); }
+
+/* Download landing page */
+.dl { padding-block: 40px 96px; }
+.dl .wrap { display: grid; gap: 28px; justify-items: start; }
+.dl .lead { font-size: 1.25rem; color: var(--fg-2); max-width: 32em; }
+.dl h2 { padding-top: 12px; }
+.howto {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 36px;
+  counter-reset: step;
+  width: 100%;
+}
+.howto li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 48px;
+  display: grid;
+  gap: 16px;
+  font-size: 1.15rem;
+  color: var(--fg-2);
+  max-width: 36em;
+}
+.howto li > p { margin: 0; }
+.howto li b { color: var(--fg); font-weight: 600; }
+.howto li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--line);
+  color: var(--fg);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1rem;
+  display: grid;
+  place-items: center;
+}
+
+/* Windows SmartScreen replica — stays light, like the real dialog */
+.ss {
+  background: color-mix(in srgb, var(--line) 65%, var(--bg));
+  padding: 22px 18px;
+  border-radius: 16px;
+  max-width: 28rem;
+}
+.ss-win {
+  position: relative;
+  background: #fff;
+  color: #1a1a1a;
+  color-scheme: light;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
+  padding: 18px 20px 16px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.ss-x {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  color: #5d5d5d;
+  font-size: 12px;
+  line-height: 1;
+}
+.ss-head { display: grid; grid-template-columns: 32px 1fr; gap: 12px; padding-right: 16px; }
+.ss-shield { width: 32px; height: 32px; margin-top: 2px; }
+.ss-title { font-size: 18px; font-weight: 600; line-height: 1.25; margin: 0 0 8px; }
+.ss-body { margin: 0; color: #5d5d5d; }
+.ss-meta {
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.ss-meta dt { color: #5d5d5d; font-weight: 400; }
+.ss-meta dd { margin: 0 0 8px; }
+.ss-meta dd:last-child { margin-bottom: 0; }
+.ss-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+}
+.ss-link { color: #0067c0; font-weight: 600; padding: 6px 4px; }
+.ss-dont {
+  background: #0067c0;
+  color: #fff;
+  font-weight: 600;
+  padding: 6px 18px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.ss-hit {
+  outline: 3px solid #F59AC0;
+  outline-offset: 5px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 8px color-mix(in srgb, #F59AC0 32%, transparent);
+}

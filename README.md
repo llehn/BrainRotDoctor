@@ -2,7 +2,7 @@
 
 # BrainRotDoctor
 
-**[Website](https://llehn.github.io/BrainRotDoctor/) · [Download for Windows](https://github.com/llehn/BrainRotDoctor/releases/latest/download/BrainRotDoctor.exe)**
+**[Website](https://llehn.github.io/BrainRotDoctor/) · [Download for Windows](https://llehn.github.io/BrainRotDoctor/download.html)**
 
 BrainRotDoctor is a Windows application for limiting Instagram
 doom-scrolling while retaining access to useful surfaces such as Direct
