@@ -144,65 +144,89 @@ h2 { font-size: clamp(2rem, 4.6vw, 3.2rem); line-height: 1.05; }
   place-items: center;
 }
 
-/* Windows SmartScreen replica — stays light, like the real dialog */
+/* Windows SmartScreen replica — the real dialog is a blue window */
 .ss {
-  background: color-mix(in srgb, var(--line) 65%, var(--bg));
-  padding: 22px 18px;
-  border-radius: 16px;
-  max-width: 28rem;
+  width: 100%;
+  max-width: 34rem;
 }
 .ss-win {
   position: relative;
-  background: #fff;
-  color: #1a1a1a;
+  min-height: 17.5rem;
+  background: #0078D7;
+  color: #fff;
   color-scheme: light;
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .22);
-  padding: 18px 20px 16px;
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
-  font-size: 14px;
-  line-height: 1.4;
+  border: 1px solid #555;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
+  font-family: "Segoe UI", "Segoe UI Emoji", sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  padding: 1.35rem 1.5rem 4.2rem;
 }
 .ss-x {
   position: absolute;
-  top: 8px;
-  right: 12px;
-  color: #5d5d5d;
-  font-size: 12px;
+  top: 0;
+  right: 0;
+  width: 45px;
+  height: 29px;
+  background: #fff;
+  color: #333;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
   line-height: 1;
 }
-.ss-head { display: grid; grid-template-columns: 32px 1fr; gap: 12px; padding-right: 16px; }
-.ss-shield { width: 32px; height: 32px; margin-top: 2px; }
-.ss-title { font-size: 18px; font-weight: 600; line-height: 1.25; margin: 0 0 8px; }
-.ss-body { margin: 0; color: #5d5d5d; }
+.ss-title {
+  margin: 0 2.5rem .7rem 0;
+  font-size: 1.7rem;
+  font-weight: 300;
+  letter-spacing: 0;
+  line-height: 1.2;
+  font-family: "Segoe UI Light", "Segoe UI", sans-serif;
+}
+.ss-body {
+  margin: 0;
+  max-width: 36em;
+  font-weight: 400;
+}
+.ss-more {
+  display: inline-block;
+  margin: .55rem 0 0;
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 400;
+}
 .ss-meta {
-  margin: 16px 0 0;
+  margin: 1rem 0 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  grid-template-columns: 7.2em 1fr;
+  column-gap: 1rem;
+  row-gap: .15rem;
+  max-width: 36em;
 }
-.ss-meta dt { color: #5d5d5d; font-weight: 400; }
-.ss-meta dd { margin: 0 0 8px; }
-.ss-meta dd:last-child { margin-bottom: 0; }
+.ss-meta dt { margin: 0; font-weight: 400; }
+.ss-meta dt::after { content: ":"; }
+.ss-meta dd { margin: 0; }
 .ss-actions {
+  position: absolute;
+  right: 1.15rem;
+  bottom: 1.05rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 20px;
+  gap: 8px;
 }
-.ss-link { color: #0067c0; font-weight: 600; padding: 6px 4px; }
-.ss-dont {
-  background: #0067c0;
-  color: #fff;
-  font-weight: 600;
-  padding: 6px 18px;
-  border-radius: 4px;
+.ss-btn {
+  background: #fff;
+  color: #1a1a1a;
+  padding: .45rem 1.15rem;
+  min-width: 6.4rem;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 400;
   white-space: nowrap;
 }
 .ss-hit {
   outline: 3px solid #F59AC0;
   outline-offset: 5px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 8px color-mix(in srgb, #F59AC0 32%, transparent);
+  box-shadow: 0 0 0 8px color-mix(in srgb, #F59AC0 40%, transparent);
 }
