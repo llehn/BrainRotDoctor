@@ -80,8 +80,7 @@ internal static class Program
             bool launchNow = SelfInstall.Run(installOptions, new DetachedApplyLauncher());
             if (launchNow && !HasFlag(args, "--no-launch"))
             {
-                System.Diagnostics.Process.Start(
-                    new System.Diagnostics.ProcessStartInfo(installer.InstalledExePath) { UseShellExecute = true });
+                ProcessLaunchRetry.Start(installer.InstalledExePath);
             }
 
             return;

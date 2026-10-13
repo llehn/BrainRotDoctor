@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>BrainRotDoctor.Starter</AssemblyName>
+    <RootNamespace>BrainRotDoctor.Starter</RootNamespace>
+    <ApplicationIcon>..\BrainRotDoctor.App\Assets\BrainRotDoctor.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- AOT is applied at publish (`-p:PublishAot=true`). Ordinary build stays IL
+         so tests can reference this project. -->
+  </PropertyGroup>
+
+</Project>

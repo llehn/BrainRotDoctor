@@ -5,7 +5,6 @@ using Avalonia.Layout;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.App.Runtime.Update;
 using BrainRotDoctor.DesignSystem;
-using System.Diagnostics;
 
 namespace BrainRotDoctor.App.Ui;
 
@@ -89,7 +88,7 @@ internal sealed class InstallerWindow : AppWindow
             if (SelfInstall.Run(_options, new DetachedApplyLauncher()))
             {
                 var installer = new Installer(_options);
-                Process.Start(new ProcessStartInfo(installer.InstalledExePath) { UseShellExecute = true });
+                ProcessLaunchRetry.Start(installer.InstalledExePath);
             }
 
             Close();

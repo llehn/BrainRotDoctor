@@ -52,6 +52,15 @@ jobs:
             -p:EnableCompressionInSingleFile=true -p:Version=${{ steps.version.outputs.version }} `
             -o publish
 
+          dotnet publish src/BrainRotDoctor.Starter -c Release -r win-x64 --self-contained true `
+            -p:PublishAot=true -p:Version=${{ steps.version.outputs.version }} `
+            -o publish/starter
+
+          ./tools/release/pack-setup.ps1 `
+            -Starter publish/starter/BrainRotDoctor.Starter.exe `
+            -App publish/BrainRotDoctor.exe `
+            -Out publish/BrainRotDoctor-Setup.exe
+
       - name: Write signed update manifest
         env:
           BRD_UPDATE_PRIVATE_KEY: ${{ secrets.BRD_UPDATE_PRIVATE_KEY }}
@@ -98,5 +107,6 @@ jobs:
             --target ${{ github.sha }} `
             --notes-file release-notes.md `
             publish/BrainRotDoctor.exe `
+            publish/BrainRotDoctor-Setup.exe `
             publish/update.json `
             publish/update.json.sig

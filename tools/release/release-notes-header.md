@@ -13,7 +13,7 @@ language automatically.
 
 ### Install — Windows 10/11, no admin needed
 
-1. Download **`BrainRotDoctor.exe`** below and double-click it.
+1. Download **`BrainRotDoctor-Setup.exe`** below and double-click it.
 2. Windows SmartScreen will warn about an unknown publisher (the app is unsigned
    and open source). Click **More info → Run anyway**.
 3. Click **Install** in the prompt.

@@ -83,12 +83,15 @@ the active culture. A test verifies every language has every key with matching
 placeholders. (Translations are machine-assisted; have a native speaker review
 before release.)
 
-It ships as a single self-contained **`BrainRotDoctor.exe`** that doubles as a
-one-click, no-admin installer (ADR-008): running the downloaded exe offers to
-install it per-user under `%LOCALAPPDATA%\Programs`, register autostart, and add
-an "Apps & features" entry. Uninstalling from Windows Settings runs the app's own
-code and **refuses while strict mode is active** — manual file deletion still
-works, but the easy three-click uninstall does not.
+The website download is **`BrainRotDoctor-Setup.exe`**: a small starter in front
+of the self-contained app (ADR-014). The first double-click retries if unpacked
+native libraries are not ready yet, then shows the same one-click, no-admin
+installer (ADR-008). Install copies the real app per-user under
+`%LOCALAPPDATA%\Programs`, registers autostart, and adds an "Apps & features"
+entry. Uninstalling from Windows Settings runs the app's own code and **refuses
+while strict mode is active** — manual file deletion still works, but the easy
+three-click uninstall does not. Silent auto-update still swaps the real app in
+Programs, not the starter.
 
 ### Build and test
 
@@ -154,21 +157,26 @@ push to `master` and installed apps update themselves within hours. See
 [tools/release/README.md](tools/release/README.md) for the one-time signing-key
 setup.
 
-To produce the single-file distributable locally (one downloadable exe, no runtime
-needed on the target):
+To produce the distributable locally (starter + app, no runtime needed on the
+target):
 
 ```sh
 dotnet publish src/BrainRotDoctor.App -c Release -r win-x64 --self-contained true ^
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
   -p:EnableCompressionInSingleFile=true -o publish
+
+dotnet publish src/BrainRotDoctor.Starter -c Release -r win-x64 --self-contained true ^
+  -p:PublishAot=true -o publish\starter
+
+pwsh tools/release/pack-setup.ps1 -Starter publish\starter\BrainRotDoctor.Starter.exe ^
+  -App publish\BrainRotDoctor.exe -Out publish\BrainRotDoctor-Setup.exe
 ```
 
-Compression keeps it a single double-click exe (~71&nbsp;MB) that self-extracts at
-launch; installed size is unaffected.
-
-The resulting `publish\BrainRotDoctor.exe` is what a user downloads and
-double-clicks. It self-installs (`--install`), and the registered uninstall runs
-`--uninstall` (which refuses during strict mode).
+The app is a single compressed exe (~71&nbsp;MB) that self-extracts at launch;
+installed size is unaffected. `publish\BrainRotDoctor-Setup.exe` is what a user
+downloads and double-clicks. `publish\BrainRotDoctor.exe` is what silent update
+swaps into Programs. Uninstall still runs `--uninstall` on the installed app
+(which refuses during strict mode).
 
 Closing the window leaves enforcement running in the tray. The UI is navigation,
 not a single dense screen: **Home** is a grid of rule cards (each showing its
@@ -761,7 +769,7 @@ harsh black/white "dark" theme and a prominent theme switch.
 
 ### ADR-008: Per-User Self-Installer with Strict-Mode-Aware Uninstall
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by ADR-014 (the website download is a starter in front of this exe)
 - **Date:** 2026-06-21
 
 #### Context
@@ -1117,6 +1125,65 @@ private window. The marker has to be per window.
 - Rules still apply in private windows; incognito is not an escape.
 - Time already counted from private visits before this change cannot be
   unpicked.
+
+### ADR-014: A Starter in Front of the Downloaded App, With Retry
+
+- **Status:** Accepted
+- **Date:** 2026-10-13
+- **Amends:** ADR-008 (what the user double-clicks after download)
+
+#### Context
+
+The published app is a .NET single-file exe. On start, the host unpacks native
+libraries into Windows Temp and loads them at once. If those files are not ready
+yet (antivirus commonly races that), the process dies with **Dll was not found**
+and the Install window never appears. A second click often works because the
+files are already there. That failure is not something the app can catch: by the
+time our window would show, the process is already gone. Signing does not replace
+a retry. Unpacking itself is fine; unpack-then-run with no second try is not.
+
+#### Decision
+
+- **A small starter is what the user downloads** (`BrainRotDoctor-Setup.exe`).
+  It is a C# Native AOT program in the same solution, so it starts without that
+  native-unpack race. It has no window of its own.
+- **The starter unpacks the real app and starts it, and retries** while that
+  start dies inside a short failure window. When the real app is actually
+  running, it shows today's Install window — the same window, not a simpler
+  stand-in.
+- **Not now / Install are unchanged.** Not now leaves nothing installed. Install
+  still copies the **real** app to Programs, Apps & features, and start with
+  Windows, then starts it from Programs (that start can retry too).
+- **Auto-update is unchanged.** Programs still holds the real app. The signed
+  `update.json` still names and hashes `BrainRotDoctor.exe`. Already-installed
+  people keep updating as they do now. The website file and the update file are
+  different jobs.
+
+#### Rejected Alternatives
+
+**Fix it inside today's exe**
+
+Rejected: the failure happens before the Install window exists. There is nothing
+of ours running that can retry that first click.
+
+**A cheaper Windows dialog in the starter**
+
+Rejected: the first thing the user sees must be the current Install window.
+
+**A native C stub and a second compiler**
+
+Rejected: this repo is C# / `dotnet`. Native AOT is still that toolchain.
+
+**Make the download and the update asset the same file**
+
+Rejected: an existing install would then update itself into the starter.
+
+#### Consequences
+
+- Releases publish both `BrainRotDoctor-Setup.exe` (website) and
+  `BrainRotDoctor.exe` (silent update).
+- A lock-harness test reproduces "Dll was not found" on the current app and
+  requires the starter's retry before the Install window appears.
 
 ## Contributing, License, and Security
 
