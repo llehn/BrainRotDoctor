@@ -55,7 +55,21 @@ public sealed class ActivityTally
 
     private ActivityRecord _record = new();
     private HashSet<string> _inFront = new(StringComparer.Ordinal);
+    private HashSet<string> _untracked = new(StringComparer.Ordinal);
     private DateTimeOffset? _lastTick;
+
+    /// <summary>
+    /// Sites (by host) whose time is never counted. Whatever was already counted
+    /// for them today is dropped too: not tracking means not keeping, not hiding.
+    /// </summary>
+    public void SetUntracked(IEnumerable<string> hosts)
+    {
+        _untracked = hosts.Select(PlaceKey.Host).ToHashSet(StringComparer.Ordinal);
+        foreach (string key in _record.Places.Keys.Where(k => _untracked.Contains(PlaceKey.HostOf(k))).ToList())
+        {
+            _record.Places.Remove(key);
+        }
+    }
 
     public void Tick(Uri? front, DateTimeOffset now)
     {
@@ -70,6 +84,10 @@ public sealed class ActivityTally
         _lastTick = now;
 
         IReadOnlyList<string> keys = PlaceKey.Of(front);
+        if (keys.Count > 0 && _untracked.Contains(keys[0]))
+        {
+            keys = Array.Empty<string>();
+        }
         var inFront = new HashSet<string>(StringComparer.Ordinal);
         foreach (string key in keys)
         {
@@ -117,6 +135,7 @@ public sealed class ActivityTally
         if (record is not null && record.Day == DayOf(now))
         {
             _record = record.Copy();
+            SetUntracked(_untracked);
         }
         else
         {

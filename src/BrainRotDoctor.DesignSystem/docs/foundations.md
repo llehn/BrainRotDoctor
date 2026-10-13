@@ -61,6 +61,20 @@ Windows unless the user picks one.
 | WarnBorder | `#EBD3A0` | `#5C4920` | | Outline of warn banners and buttons |
 | WarnText | `#5C3D00` | `#F2C76B` | `TextTone.Warn` | Text on warn surfaces |
 | Knob | `#FFFFFF` | `#FFFFFF` | | The knob of a switch |
+| Scrim | `#7316171B` | `#99000000` | | Dims the screen behind an `Overlay` |
+
+### Maps
+
+The one place colour is not meaning: tile colours only tell neighbouring
+tiles of a `TileMap` apart. The clock fills do carry meaning, a ramp from
+little time to a lot, getting stronger (darker in light, brighter in dark).
+
+| Role | Light | Dark | Use |
+|---|---|---|---|
+| Tile1–Tile8 | pastels `#CFE3F3` `#F6D6C8` `#D9EBCF` `#EBD9F2` `#F7E7B9` `#CDEBE6` `#F3D3DE` `#DCDDF5` | deep muted `#22384A` `#4A3026` `#2B3F29` `#3D2D45` `#463C1F` `#1F403B` `#462A35` `#2E3050` | `MapTile` backgrounds |
+| TileInset | `#80FFFFFF` | `#1FFFFFFF` | Nested tiles inside a tile |
+| Clock1–Clock5 | `#8CCBC1` → `#063F3A` | `#2F6F66` → `#C2F2EA` | `ClockFill`: under ½ h, 1 h, 2 h, 3 h, more |
+| ClockTrack | `#1A16171B` | `#2EFFFFFF` | The empty part of a clock |
 
 `Tone.Neutral` maps to the greys, `Tone.Ink` to the ink pair.
 

@@ -138,11 +138,12 @@ public sealed class TopBar : Border
 
 /// <summary>
 /// The main layout: a fixed sidebar (navigation on top, status at the bottom)
-/// and a scrolling content area.
+/// and a content area that scrolls, or, with <c>scrolls: false</c>, is exactly
+/// the window's height so the content can fill it.
 /// </summary>
 public sealed class SidebarLayout : DockPanel
 {
-    public SidebarLayout(Control sidebarTop, Control sidebarBottom, Control content)
+    public SidebarLayout(Control sidebarTop, Control sidebarBottom, Control content, bool scrolls = true)
     {
         var side = new DockPanel { LastChildFill = false };
         DockPanel.SetDock(sidebarTop, Dock.Top);
@@ -160,16 +161,18 @@ public sealed class SidebarLayout : DockPanel
             [!Border.BorderBrushProperty] = Palette.Dyn(Palette.Border),
         };
 
-        var scroll = new ScrollViewer
+        var padded = new Border
         {
-            Content = new Border { Padding = new Thickness(Space.S10, Space.S8, Space.S10, Space.S10), Child = content },
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = scrolls ? new Thickness(Space.S10, Space.S8, Space.S10, Space.S10) : new Thickness(Space.S8, Space.S8, Space.S8, Space.S6),
+            Child = content,
         };
 
         LastChildFill = true;
         DockPanel.SetDock(sidebar, Dock.Left);
         Children.Add(sidebar);
-        Children.Add(scroll);
+        Children.Add(scrolls
+            ? new ScrollViewer { Content = padded, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }
+            : padded);
     }
 }
 

@@ -26,6 +26,7 @@ internal sealed class EnforcementController : IDisposable
     private readonly UsageStore _usageStore;
     private readonly PauseStore _pauseStore;
     private readonly ActivityStore _activityStore;
+    private readonly RuleBaselineStore _ruleBaseline;
     private readonly ActivityTally _activity = new();
     private DateTimeOffset _activitySavedAt;
     private PauseState? _pause;
@@ -54,8 +55,10 @@ internal sealed class EnforcementController : IDisposable
         string? logPath = null,
         UsageStore? usageStore = null,
         PauseStore? pauseStore = null,
-        ActivityStore? activityStore = null)
+        ActivityStore? activityStore = null,
+        RuleBaselineStore? ruleBaseline = null)
     {
+        _ruleBaseline = ruleBaseline ?? new RuleBaselineStore();
         ArgumentNullException.ThrowIfNull(configuration);
         _observer = observer ?? throw new ArgumentNullException(nameof(observer));
         _tabCloser = tabCloser ?? throw new ArgumentNullException(nameof(tabCloser));
@@ -103,10 +106,10 @@ internal sealed class EnforcementController : IDisposable
         }
     }
 
-    /// <summary>Locks the given rules (null = all) for <paramref name="duration"/>; ends any pause.</summary>
-    public StrictModeSnapshot ActivateStrictMode(TimeSpan duration, IReadOnlyCollection<string>? lockedRuleIds = null)
+    /// <summary>Turns strict mode on for <paramref name="duration"/>; ends any pause.</summary>
+    public StrictModeSnapshot ActivateStrictMode(TimeSpan duration)
     {
-        StrictModeSnapshot snapshot = _strictModeStore.Activate(duration, _configurationJson, lockedRuleIds);
+        StrictModeSnapshot snapshot = _strictModeStore.Activate(duration);
         SetPause(null);
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
         return snapshot;
@@ -138,15 +141,31 @@ internal sealed class EnforcementController : IDisposable
         EditableConfiguration.FromJson(_configurationJson);
 
     /// <summary>
-    /// Validates and saves <paramref name="editable"/>. During strict mode a save is
-    /// refused only when it changes or removes a locked rule.
+    /// Sites whose time is not recorded at all; what today's statistics already
+    /// hold for them is dropped at once.
+    /// </summary>
+    public void SetUntrackedSites(IEnumerable<string> hosts)
+    {
+        lock (_sync)
+        {
+            _activity.SetUntracked(hosts);
+        }
+
+        PersistActivity(DateTimeOffset.Now);
+        Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, Status.Rules, Status.LastError));
+    }
+
+    /// <summary>
+    /// Validates and saves <paramref name="editable"/>. While strict mode is on, a
+    /// save is refused when it changes, switches off or removes an existing rule.
     /// </summary>
     public bool TrySaveConfiguration(EditableConfiguration editable, out string? error)
     {
         error = null;
-        if (_strictModeStore.FindLockViolations(editable) is { } locked)
+        if (_strictModeStore.GetSnapshot().IsActive
+            && RuleGuard.Loosened(GetEditableConfiguration(), editable) is { Count: > 0 } loosened)
         {
-            error = $"Locked by strict mode: {string.Join(", ", locked)}";
+            error = $"Locked by strict mode: {string.Join(", ", loosened)}";
             return false;
         }
 
@@ -196,6 +215,7 @@ internal sealed class EnforcementController : IDisposable
             _configSource = _configurationFilePath;
         }
 
+        _ruleBaseline.Save(json);
         PersistUsage();
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
         return true;

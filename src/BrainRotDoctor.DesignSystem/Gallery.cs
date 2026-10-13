@@ -24,6 +24,7 @@ public static class Gallery
         page.Children.Add(Section("Input", Inputs()));
         page.Children.Add(Section("Surfaces", Surfaces()));
         page.Children.Add(Section("Status", Indicators()));
+        page.Children.Add(Section("Maps of time", Maps()));
         page.Children.Add(Section("Navigation and lists", NavigationAndLists()));
         return new Border { Padding = new Thickness(Space.S8), Child = page, [!Border.BackgroundProperty] = Palette.Dyn(Palette.AppBg) };
     }
@@ -157,6 +158,29 @@ public static class Gallery
                 Labeled("SuggestionChip", new SuggestionChip("example.com/page/")),
                 Labeled("RemovableChip", new RemovableChip("key = value", "Remove")),
                 Labeled("StatusPanel", Layout.Row(Space.S3, status, statusInk))));
+    }
+
+    private static Control Maps()
+    {
+        var parts = new TileMap();
+        parts.Add(new MapTile("/section", 0, TimeSpan.FromMinutes(70), nested: true), 70);
+        parts.Add(new MapTile("The rest", 0, TimeSpan.FromMinutes(25), nested: true), 25);
+
+        var map = new TileMap { Width = 900, Height = 360 };
+        map.Add(new MapTile("Two hours", 0, TimeSpan.FromMinutes(134), parts), 134);
+        map.Add(new MapTile("About an hour and a half", 1, TimeSpan.FromMinutes(96)), 96);
+        map.Add(new MapTile("Forty minutes", 2, TimeSpan.FromMinutes(41)), 41);
+        map.Add(new MapTile("Twenty", 3, TimeSpan.FromMinutes(20)), 20);
+        map.Add(new MapTile("Eight", 4, TimeSpan.FromMinutes(8)), 8);
+
+        return Layout.Column(Space.S4,
+            Wrap(Space.S6, new[] { 5, 25, 45, 90, 150, 200 }.Select(m =>
+                (Control)Labeled($"ClockFill, {m} min", new ClockFill(TimeSpan.FromMinutes(m))))
+                .Append(Labeled("Overlay", new Overlay(
+                    new Card(new TextLine("The screen behind"), CardStyle.Surface, CardPadding.Roomy),
+                    new Card(new TextLine("Sheet", TextStyle.Strong), CardStyle.Surface, CardPadding.Roomy)) { Width = 320, Height = 200 }))
+                .ToArray()),
+            Labeled("TileMap of MapTiles, one with nested tiles", map));
     }
 
     private static Control NavigationAndLists()

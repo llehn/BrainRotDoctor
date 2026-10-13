@@ -41,25 +41,36 @@ Firefox, Chrome, and Edge. A blocked tab does not vanish without warning: a shor
 animated scene plays in the screen corner (a doctor pulls a worm out of a brain)
 and the tab closes the moment the worm pops out, about three seconds in (ADR-012).
 
-The app opens on a **Status** view: where today's browser time went, judged
-brain rot or not, with one click to turn any of it into a rule. Only the page in
-the foreground browser window counts. Time is kept as **statistics, not
-history**: totals per site and per path section (cut off at the first section
-that names a single item, such as an ID or a post title), with no timestamps
-and no page addresses, held on this PC for today only and cleared at midnight
-(`src/BrainRotDoctor.Core/Activity`). Sites are split automatically where the
-time goes (a section with at least a quarter of its parent's time and two
-minutes gets its own line). The verdict comes from behaviour alone (long time
-on a site, or coming back again and again), and a site can be marked "not
-brain rot". The view also shows strict mode at a glance and today's
-achievements.
+The app opens on a **Status** view: a mirror of today, not a verdict. Every site
+is a tile whose size is its share of today's browser time, filling the window
+without scrolling; under each name, clock faces show the time itself (one per
+hour, the last one filling, stronger the more there is), with the exact time
+only on hover. Nothing is flagged: only the user decides what's a waste.
+Clicking a tile enlarges it with the actions: block the site or one of its
+parts (always, or after 5 or 15 minutes an hour, saved at once; "More options"
+opens the rule editor), or "It's fine. Stop tracking": that site's time is then
+not recorded at all, and what today already held for it is dropped (the list is
+in Settings, behind a button). Only the page in the foreground browser window
+counts. Time is kept as **statistics, not history**: totals per site and per
+path section (cut off at the first section that names a single item, such as an
+ID or a post title), with no timestamps and no page addresses, held on this PC
+for today only and cleared at midnight (`src/BrainRotDoctor.Core/Activity`).
+Sites are split where the time goes (a section with at least a quarter of its
+parent's time and two minutes gets its own part).
+
+**Strict mode is a flag**: on until a time, knowing nothing about rules. The
+status view turns it on in one click (1 hour, 2 hours, until 18:00 while at
+least two hours of the day are left, rest of today), with three seconds to
+cancel a slip; the Strict mode screen picks any length. While it is on, the
+rules side only accepts changes that make blocking stricter: adding a rule and
+switching a rule on work; changing, switching off or deleting one doesn't
+(`RuleGuard`). The rules as last accepted are kept apart, so a hand edit of
+the config file during strict mode is undone at the next start. Off is shown
+as needing attention (amber); on is calm.
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. Normal startup also registers the app in the
-current user's Windows Run key. Strict mode can be activated from the UI for a
-flexible duration (any number of minutes, hours, or days) behind a double opt-in;
-while active, the app uses the locked configuration snapshot captured at
-activation and ignores later config changes until the deadline passes.
+current user's Windows Run key.
 
 The UI is **localized into 31 languages** (the 24 official EU languages plus
 Russian, Ukrainian, Bosnian, Serbian (Cyrillic), Norwegian Bokmål, Turkish, and
@@ -171,9 +182,9 @@ per site.
 
 Saving is explicit: the edit screen validates through the same core loader used
 at startup, persists to the active config file, reloads enforcement, and returns
-to the grid; Cancel discards. While strict mode is active it becomes the landing
-screen and the existing rules are locked, using the config snapshot captured at
-activation.
+to the grid; Cancel discards. While strict mode is active, existing rules can't
+be opened for editing; a rule that's off can still be switched on, and new
+rules can be added.
 
 ## Architecture Decision Records
 

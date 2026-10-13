@@ -1,15 +1,7 @@
 namespace BrainRotDoctor.Core.Activity;
 
-/// <summary>How a site's day looks, judged from how you use it — not from a list of sites.</summary>
-public enum Verdict
-{
-    Fine,
-    WatchOut,
-    BrainRot,
-}
-
 /// <summary>
-/// A place worth its own line: a section of a site that holds a good part of
+/// A place worth its own card: a section of a site that holds a good part of
 /// the site's time, the whole site, or the rest of a site whose sections were
 /// split out.
 /// </summary>
@@ -22,28 +14,24 @@ public sealed record ActivityPlace(string Host, string Path, TimeSpan Time, bool
     public string Label => Path.Length == 0 ? Host : Host + "/" + Path;
 }
 
-/// <summary>One site's day: its time, visits, verdict, and the places its time went to.</summary>
-public sealed record ActivitySite(
-    string Host,
-    TimeSpan Time,
-    int Visits,
-    Verdict Verdict,
-    bool MarkedFine,
-    IReadOnlyList<ActivityPlace> Places);
+/// <summary>One site's day: its time and the places its time went to.</summary>
+public sealed record ActivitySite(string Host, TimeSpan Time, IReadOnlyList<ActivityPlace> Places)
+{
+    /// <summary>The site was split into sections (and maybe the rest), not shown whole.</summary>
+    public bool IsSplit => Places.Count > 1 || (Places.Count == 1 && Places[0].Path.Length > 0);
+}
 
 /// <summary>
 /// Today's statistics turned into what the status view shows: sites sorted by
-/// time, each judged, and each split into the places that hold its time.
+/// time, each split into the places that hold its time. Nothing is judged:
+/// only you decide what is a waste of time.
 ///
-/// Splitting follows the time: a section gets its own line once it holds at
+/// Splitting follows the time: a section gets its own card once it holds at
 /// least <see cref="SplitShare"/> of the place above it and at least
 /// <see cref="SplitMinimum"/>; it is split further the same way. So a site you
 /// spend most of an hour in one forum's comments on shows exactly that, while a
-/// site used evenly stays one line. Whatever isn't split out stays with the site
-/// as "everything else".
-///
-/// The verdict comes from behaviour alone: long time on a site, or coming back
-/// to it again and again. A site you mark as fine is never counted as brain rot.
+/// site used evenly stays whole. Whatever isn't split out stays with the site
+/// as "the rest".
 /// </summary>
 public sealed class ActivityReport
 {
@@ -51,24 +39,10 @@ public sealed class ActivityReport
     public static readonly TimeSpan SplitMinimum = TimeSpan.FromMinutes(2);
     public const double SplitShare = 0.25;
 
-    /// <summary>A site this long today is brain rot.</summary>
-    public static readonly TimeSpan RotTime = TimeSpan.FromMinutes(30);
-
-    /// <summary>A site opened this often today, for at least <see cref="RotCheckingTime"/>, is brain rot too.</summary>
-    public const int RotVisits = 10;
-
-    public static readonly TimeSpan RotCheckingTime = TimeSpan.FromMinutes(10);
-
-    public static readonly TimeSpan WatchTime = TimeSpan.FromMinutes(15);
-    public const int WatchVisits = 6;
-    public static readonly TimeSpan WatchCheckingTime = TimeSpan.FromMinutes(5);
-
-    private ActivityReport(IReadOnlyList<ActivitySite> sites, TimeSpan total, int shortSites)
+    private ActivityReport(IReadOnlyList<ActivitySite> sites, TimeSpan total)
     {
         Sites = sites;
         Total = total;
-        ShortSites = shortSites;
-        BrainRot = TimeSpan.FromTicks(sites.Where(s => s.Verdict == Verdict.BrainRot).Sum(s => s.Time.Ticks));
     }
 
     /// <summary>Sites with at least <see cref="SiteMinimum"/> today, longest first.</summary>
@@ -77,13 +51,7 @@ public sealed class ActivityReport
     /// <summary>All time with a web page in front today.</summary>
     public TimeSpan Total { get; }
 
-    /// <summary>Time on sites judged brain rot.</summary>
-    public TimeSpan BrainRot { get; }
-
-    /// <summary>Sites visited today for less than <see cref="SiteMinimum"/> each, not listed.</summary>
-    public int ShortSites { get; }
-
-    public static ActivityReport Build(ActivityRecord record, IReadOnlySet<string>? markedFine = null)
+    public static ActivityReport Build(ActivityRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
 
@@ -104,37 +72,16 @@ public sealed class ActivityReport
 
         var sites = new List<ActivitySite>();
         TimeSpan all = TimeSpan.Zero;
-        int shortSites = 0;
         foreach ((string host, PlaceTotal total) in record.Places.Where(p => !p.Key.Contains('/')))
         {
             all += total.Time;
-            if (total.Time < SiteMinimum)
+            if (total.Time >= SiteMinimum)
             {
-                shortSites++;
-                continue;
+                sites.Add(new ActivitySite(host, total.Time, Split(host, total.Time, children)));
             }
-
-            bool fine = markedFine?.Contains(host) == true;
-            Verdict verdict = fine ? Verdict.Fine : Judge(total.Time, total.Visits);
-            sites.Add(new ActivitySite(host, total.Time, total.Visits, verdict, fine, Split(host, total.Time, children)));
         }
 
-        return new ActivityReport(sites.OrderByDescending(s => s.Time).ToList(), all, shortSites);
-    }
-
-    public static Verdict Judge(TimeSpan time, int visits)
-    {
-        if (time >= RotTime || (visits >= RotVisits && time >= RotCheckingTime))
-        {
-            return Verdict.BrainRot;
-        }
-
-        if (time >= WatchTime || (visits >= WatchVisits && time >= WatchCheckingTime))
-        {
-            return Verdict.WatchOut;
-        }
-
-        return Verdict.Fine;
+        return new ActivityReport(sites.OrderByDescending(s => s.Time).ToList(), all);
     }
 
     private static IReadOnlyList<ActivityPlace> Split(string host, TimeSpan siteTime, Dictionary<string, List<(string Key, TimeSpan Time)>> children)

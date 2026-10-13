@@ -80,6 +80,11 @@ internal sealed partial class MainWindow : AppWindow
 
     private void Navigate(Page page)
     {
+        if (page != Page.Status)
+        {
+            _justUntracked = null;
+        }
+
         _page = page;
         Rerender();
     }
@@ -96,7 +101,7 @@ internal sealed partial class MainWindow : AppWindow
             Page.AddSites when _editingRule is not null => BuildAddSites(),
             Page.Strict => WithSidebar(_status.StrictMode.IsActive ? BuildStrictRunning() : BuildStrictSetup()),
             Page.Settings => WithSidebar(BuildSettings()),
-            Page.Status => WithSidebar(BuildStatusPage()),
+            Page.Status => StatusScreen(),
             _ => WithSidebar(BuildHome()),
         };
 
@@ -140,7 +145,7 @@ internal sealed partial class MainWindow : AppWindow
 
     // ---------- Sidebar ----------
 
-    private Control WithSidebar(Control content)
+    private Control WithSidebar(Control content, bool scrolls = true)
     {
         var nav = new StackPanel { Spacing = Space.S1 };
         nav.Children.Add(Brand());
@@ -148,7 +153,7 @@ internal sealed partial class MainWindow : AppWindow
         nav.Children.Add(NavTo(Glyph.List, Loc.T("rules"), Page.Home, badge: null));
         nav.Children.Add(NavTo(Glyph.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
         nav.Children.Add(NavTo(Glyph.Gear, Loc.T("settings"), Page.Settings, badge: null));
-        return new SidebarLayout(nav, StatusCard(), content);
+        return new SidebarLayout(nav, StatusCard(), content, scrolls);
     }
 
     private static Control Brand()
@@ -174,7 +179,8 @@ internal sealed partial class MainWindow : AppWindow
         {
             if (status.StrictMode.IsActive)
             {
-                panel.SetState(Tone.Ink, Loc.T("strict_mode"), Loc.T("time_left", FormatSpan(status.StrictMode.Remaining)), inverted: true);
+                // Strict mode on is the good state: calm, nothing to do.
+                panel.SetState(Tone.Accent, Loc.T("strict_mode"), Loc.T("time_left", FormatSpan(status.StrictMode.Remaining)), inverted: false);
             }
             else if (status.Pause is { } pause)
             {

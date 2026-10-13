@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Activity;
 using BrainRotDoctor.Core.Configuration;
@@ -9,244 +11,338 @@ namespace BrainRotDoctor.App.Ui;
 
 internal sealed partial class MainWindow
 {
-    // ---------- Status: today's browsing, strict mode, achievements ----------
+    // ---------- Status: today's sites as a map of time, and strict mode in one click ----------
 
-    /// <summary>Under this much brain rot, the day still counts as clean.</summary>
-    private static readonly TimeSpan CleanLimit = TimeSpan.FromMinutes(15);
+    /// <summary>A shortcut turns strict mode on after this long, so a slip of the mouse can still be cancelled.</summary>
+    private static readonly TimeSpan ActivationDelay = TimeSpan.FromSeconds(3);
 
-    private const int ListedSites = 12;
+    /// <summary>The map shows at most this many sites; the rest are too small to see anyway.</summary>
+    private const int MappedSites = 12;
 
-    private HashSet<string>? _fineSites;
+    private HashSet<string>? _untracked;
+    private string? _openSite;
+    private string? _justUntracked;
+    private DispatcherTimer? _activation;
+
+    // Rules made from the status view in this session, by the place they block: undoable until strict mode.
+    private readonly Dictionary<string, string> _madeRules = new(StringComparer.Ordinal);
+
+    private Control StatusScreen()
+    {
+        Control screen = WithSidebar(BuildStatusPage(), scrolls: false);
+        if (_openSite is null)
+        {
+            return screen;
+        }
+
+        ActivitySite? site = ActivityReport.Build(_status.Activity).Sites.FirstOrDefault(s => s.Host == _openSite);
+        if (site is null)
+        {
+            _openSite = null;
+            return screen;
+        }
+
+        var overlay = new Overlay(screen, SiteSheet(site));
+        overlay.Dismissed += (_, _) =>
+        {
+            _openSite = null;
+            Rerender();
+        };
+        return overlay;
+    }
 
     private Control BuildStatusPage()
     {
-        _fineSites ??= _settings.LoadFineSites();
-        BlockerConfiguration? rules = CurrentRules();
-
-        var page = new StackPanel { Spacing = Space.S6 };
-        page.Children.Add(new PageHeader(Loc.T("status"), Loc.T("status_subtitle")));
+        StackPanel top = Layout.Column(Space.S4, new PageHeader(Loc.T("today")));
         if (_status.Pause is { } pause)
         {
-            page.Children.Add(PausedBanner(pause));
+            top.Children.Add(PausedBanner(pause));
         }
 
-        // Summary
-        var rotTime = new TextLine("", TextStyle.Display);
-        var ofTotal = new TextLine("", TextStyle.Small);
-        var rotShare = new Meter(0, Tone.Danger) { Margin = new Thickness(0, Space.S2, 0, 0) };
-        var summary = new Card(
-            Layout.Column(Space.S2, new TextLine(Loc.T("rot_today"), TextStyle.Overline), rotTime, ofTotal, rotShare),
-            CardStyle.Surface,
-            CardPadding.Roomy);
+        top.Children.Add(StrictBar());
+        if (_justUntracked is { } host)
+        {
+            top.Children.Add(UntrackedNote(host));
+        }
 
-        // Where the time went
-        var sitesHost = new ContentControl();
-        var where = new Card(
-            Layout.Column(0,
-                new Band(Layout.Column(Space.S1, new TextLine(Loc.T("where_time_went"), TextStyle.Subheading), new TextLine(Loc.T("where_time_went_help"), TextStyle.Small)), new Thickness(Space.S6, Space.S5)),
-                new Divider(),
-                sitesHost),
-            CardStyle.Surface,
-            CardPadding.None);
+        top.Margin = new Thickness(0, 0, 0, Space.S5);
+        var page = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(top, Dock.Top);
+        page.Children.Add(top);
 
-        // Achievements
-        var achievementsHost = new ContentControl();
-        var achievements = new Card(
-            Layout.Column(Space.S4, new TextLine(Loc.T("achievements"), TextStyle.Subheading), achievementsHost),
-            CardStyle.Surface,
-            CardPadding.Roomy);
+        var map = new ContentControl();
+        page.Children.Add(map);
 
-        page.Children.Add(Layout.Columns(summary, StrictAtAGlance(), 340, gap: Space.S5, fixedRight: true));
-        page.Children.Add(Layout.Columns(where, achievements, 340, gap: Space.S5, fixedRight: true));
-
-        string? shownSites = null;
-        string? shownAchievements = null;
+        string? shown = null;
         _live.Add(status =>
         {
-            ActivityReport report = ActivityReport.Build(status.Activity, _fineSites);
-
-            rotTime.SetText(Minutes(report.BrainRot));
-            ofTotal.SetText(Loc.T("rot_of_total", Minutes(report.Total)));
-            rotShare.SetFraction(report.Total > TimeSpan.Zero ? report.BrainRot / report.Total : 0);
-
-            string sites = SitesSignature(report);
-            if (sites != shownSites)
+            ActivityReport report = ActivityReport.Build(status.Activity);
+            string signature = Signature(report);
+            if (signature != shown)
             {
-                shownSites = sites;
-                sitesHost.Content = SiteList(report, rules);
-            }
-
-            bool[] earned = Earned(report, status);
-            string badges = string.Concat(earned.Select(e => e ? '1' : '0'));
-            if (badges != shownAchievements)
-            {
-                shownAchievements = badges;
-                achievementsHost.Content = AchievementList(earned);
+                shown = signature;
+                map.Content = SiteMap(report);
             }
         });
 
         return page;
     }
 
-    // ----- Strict mode at a glance -----
+    // ----- Strict mode -----
 
-    private Control StrictAtAGlance()
+    /// <summary>Off: needs attention, with one-click shortcuts. Activating: a moment to cancel. On: calm.</summary>
+    private Control StrictBar()
     {
-        if (!_status.StrictMode.IsActive)
+        if (_status.StrictMode.IsActive)
         {
-            var turnOn = new PillButton(Loc.T("turn_on_strict"), ButtonKind.Primary, Glyph.Lock) { Stretch = true };
-            turnOn.Click += (_, _) => Navigate(Page.Strict);
-            return new Card(
-                Layout.Column(Space.S4,
-                    Layout.Column(Space.S2,
-                        Layout.Row(Space.S2, new Icon(Glyph.Lock, 18), new TextLine(Loc.T("strict_off"), TextStyle.Subheading)),
-                        new TextLine(Loc.T("strict_off_help"), TextStyle.Small)),
-                    turnOn),
-                CardStyle.Surface,
-                CardPadding.Roomy);
+            TextLine message = Banner.Message(Tone.Accent);
+            _live.Add(status =>
+            {
+                if (status.StrictMode.ActiveUntilLocal is { } until)
+                {
+                    message.SetPhrases(
+                        new Phrase(Loc.T("strict_on"), Strong: true),
+                        new Phrase($" {Loc.T("until_time", Clock(until))} · {Loc.T("time_left", FormatSpan(status.StrictMode.Remaining))}"));
+                }
+            });
+            return new Banner(Tone.Accent, Glyph.Lock, message);
         }
 
-        var countdown = new TextLine("", TextStyle.Heading, TextTone.OnInk);
-        var progress = new Meter(0, Tone.Ink, onInk: true);
-        string until = _status.StrictMode.ActiveUntilLocal is { } end ? WhenText(end) : "";
-        var card = new Card(
-            Layout.Column(Space.S3,
-                Layout.Row(Space.S2, new Icon(Glyph.Lock, 16, TextTone.OnInkMuted), new TextLine(Loc.T("strict_on"), TextStyle.Label, TextTone.OnInkMuted)),
-                countdown,
-                new TextLine(Loc.T("unlocks") + " " + until, TextStyle.Small, TextTone.OnInkMuted),
-                progress),
-            CardStyle.Ink,
-            CardPadding.Roomy);
-        card.Click += (_, _) => Navigate(Page.Strict);
-
-        _live.Add(status =>
+        if (_activation is not null)
         {
-            countdown.SetText(FormatSpan(status.StrictMode.Remaining));
-            progress.SetFraction(status.StrictMode.Progress);
-        });
+            var cancel = new PillButton(Loc.T("cancel"), ButtonKind.Ghost, size: ButtonSize.Small);
+            cancel.Click += (_, _) => CancelStrict();
+            return new Banner(Tone.Accent, Glyph.Lock, Banner.Message(Tone.Accent, new Phrase(Loc.T("strict_activating"), Strong: true)), cancel);
+        }
 
-        return card;
+        var shortcuts = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S2, LineSpacing = Space.S2 };
+        shortcuts.Children.Add(new TextLine(Loc.T("turn_on"), TextStyle.Body, TextTone.Warn) { Margin = new Thickness(0, 0, Space.S1, 0) });
+        foreach ((string label, DateTimeOffset end) in StrictShortcuts(DateTimeOffset.Now))
+        {
+            var shortcut = new PillButton(label);
+            shortcut.Click += (_, _) => BeginStrict(end);
+            shortcuts.Children.Add(shortcut);
+        }
+
+        var more = new PillButton(Loc.T("more_options"), ButtonKind.Ghost);
+        more.Click += (_, _) => Navigate(Page.Strict);
+        shortcuts.Children.Add(more);
+        foreach (Control child in shortcuts.Children)
+        {
+            child.VerticalAlignment = VerticalAlignment.Center;
+        }
+
+        return new Banner(Tone.Warn, Glyph.Lock, Layout.Column(Space.S3, Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true)), shortcuts));
     }
 
-    // ----- Where the time went -----
+    /// <summary>A short focus, a longer one, the work day (while there's enough of it left) and the rest of the day.</summary>
+    private static IEnumerable<(string Label, DateTimeOffset End)> StrictShortcuts(DateTimeOffset now)
+    {
+        yield return (Loc.T("pause_1h"), now.AddHours(1));
+        yield return (Loc.T("len_2h"), now.AddHours(2));
+        var evening = new DateTimeOffset(now.Date.AddHours(18), now.Offset);
+        if (evening - now >= TimeSpan.FromHours(2))
+        {
+            yield return (Loc.T("until_clock", Clock(evening)), evening);
+        }
 
-    private Control SiteList(ActivityReport report, BlockerConfiguration? rules)
+        yield return (Loc.T("len_today"), new DateTimeOffset(now.Date.AddDays(1), now.Offset));
+    }
+
+    private void BeginStrict(DateTimeOffset end)
+    {
+        CancelStrict();
+        _activation = new DispatcherTimer { Interval = ActivationDelay };
+        _activation.Tick += (_, _) =>
+        {
+            _activation?.Stop();
+            _activation = null;
+            _controller.ActivateStrictMode(end - DateTimeOffset.Now);
+            _status = _controller.Status;
+            if (_page == Page.Status)
+            {
+                Rerender();
+            }
+        };
+        _activation.Start();
+        Rerender();
+    }
+
+    private void CancelStrict()
+    {
+        if (_activation is null)
+        {
+            return;
+        }
+
+        _activation.Stop();
+        _activation = null;
+        if (_page == Page.Status)
+        {
+            Rerender();
+        }
+    }
+
+    // ----- The map -----
+
+    private Control SiteMap(ActivityReport report)
     {
         if (report.Sites.Count == 0)
         {
-            return new Band(new TextLine(Loc.T("no_browsing_yet"), TextStyle.Small), new Thickness(Space.S6, Space.S5));
+            return new Card(new TextLine(Loc.T("no_browsing_yet"), TextStyle.Small) { MaxWidth = 420 }, CardStyle.Outline, CardPadding.Roomy)
+            {
+                VerticalAlignment = VerticalAlignment.Top,
+            };
         }
 
-        TimeSpan longest = report.Sites[0].Time;
-        var list = new StackPanel();
-        foreach (ActivitySite site in report.Sites.Take(ListedSites))
+        var map = new TileMap();
+        for (int i = 0; i < Math.Min(MappedSites, report.Sites.Count); i++)
         {
-            if (list.Children.Count > 0)
+            ActivitySite site = report.Sites[i];
+            TileMap? parts = null;
+            if (site.Places.Count > 1)
             {
-                list.Children.Add(new Divider());
+                parts = new TileMap { Gap = 6 };
+                foreach (ActivityPlace place in site.Places)
+                {
+                    var part = new MapTile(place.IsRest ? Loc.T("the_rest") : "/" + place.Path, i, place.Time, nested: true);
+                    ToolTip.SetTip(part, $"{PlaceName(place)} · {Minutes(place.Time)}");
+                    parts.Add(part, place.Time.TotalSeconds);
+                }
             }
 
-            list.Children.Add(SiteRow(site, longest, rules));
+            var tile = new MapTile(site.Host, i, site.Time, parts);
+            ToolTip.SetTip(tile, $"{site.Host} · {Minutes(site.Time)}");
+            tile.Click += (_, _) =>
+            {
+                _openSite = site.Host;
+                _justUntracked = null;
+                Rerender();
+            };
+            map.Add(tile, site.Time.TotalSeconds);
         }
 
-        int unlisted = report.ShortSites + Math.Max(0, report.Sites.Count - ListedSites);
-        if (unlisted > 0)
-        {
-            list.Children.Add(new Divider());
-            list.Children.Add(new Band(new TextLine(Loc.T("other_sites", unlisted), TextStyle.Caption), new Thickness(Space.S6, Space.S3), shaded: true));
-        }
-
-        return list;
+        return map;
     }
 
-    private Control SiteRow(ActivitySite site, TimeSpan longest, BlockerConfiguration? rules)
+    /// <summary>What the map shows, to the minute: it's rebuilt only when this changes.</summary>
+    private static string Signature(ActivityReport report) =>
+        string.Join(";", report.Sites.Take(MappedSites).Select(s =>
+            $"{s.Host}:{(int)s.Time.TotalMinutes}:" + string.Join(",", s.Places.Select(p => $"{p.Path}={(int)p.Time.TotalMinutes}"))));
+
+    // ----- One site, looked at closely -----
+
+    private Control SiteSheet(ActivitySite site)
     {
-        (string verdict, Tone tone) = site.Verdict switch
+        BlockerConfiguration? rules = CurrentRules();
+
+        var close = new IconButton(Glyph.Close, Loc.T("close"));
+        close.Click += (_, _) =>
         {
-            Verdict.BrainRot => (Loc.T("verdict_rot"), Tone.Danger),
-            Verdict.WatchOut => (Loc.T("verdict_watch"), Tone.Warn),
-            _ => (site.MarkedFine ? Loc.T("verdict_your_call") : Loc.T("verdict_fine"), Tone.Accent),
+            _openSite = null;
+            Rerender();
         };
 
-        var chip = new Chip(verdict, tone);
-        ToolTip.SetTip(chip, Loc.T("verdict_explain", (int)ActivityReport.RotTime.TotalMinutes, ActivityReport.RotVisits, (int)ActivityReport.RotCheckingTime.TotalMinutes));
-
-        StackPanel right = Layout.Row(Space.S3);
-        if (site.MarkedFine)
-        {
-            var undo = new PillButton(Loc.T("undo"), ButtonKind.Ghost, size: ButtonSize.Small);
-            undo.Click += (_, _) => SetFine(site.Host, false);
-            right.Children.Add(undo);
-        }
-        else if (site.Verdict != Verdict.Fine)
-        {
-            var fine = new PillButton(Loc.T("not_rot"), ButtonKind.Ghost, size: ButtonSize.Small);
-            fine.Click += (_, _) => SetFine(site.Host, true);
-            right.Children.Add(fine);
-        }
-
-        right.Children.Add(chip);
-        right.Children.Add(new TextLine(Minutes(site.Time), TextStyle.Strong) { MinWidth = 72, TextAlignment = Avalonia.Media.TextAlignment.Right });
-
-        Monogram mark = SiteLook.Monogram(CatalogIdOf(site.Host), site.Host, 32);
-        mark.Margin = new Thickness(0, 0, Space.S3, 0);
-        right.Margin = new Thickness(Space.S3, 0, 0, 0);
+        var clocks = new ClockFill(site.Time, 26);
+        ToolTip.SetTip(clocks, Minutes(site.Time));
+        StackPanel title = Layout.Column(Space.S3, new TextLine(site.Host, TextStyle.Title), clocks);
         var head = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(right, Dock.Right);
-        DockPanel.SetDock(mark, Dock.Left);
-        head.Children.Add(right);
-        head.Children.Add(mark);
-        head.Children.Add(Layout.Column(Space.S0,
-            new TextLine(site.Host, TextStyle.Strong) { SingleLine = true },
-            new TextLine(Loc.T("opened_times", site.Visits), TextStyle.Caption)));
+        DockPanel.SetDock(close, Dock.Right);
+        close.VerticalAlignment = VerticalAlignment.Top;
+        head.Children.Add(close);
+        head.Children.Add(title);
 
-        Tone bar = site.Verdict switch
-        {
-            Verdict.BrainRot => Tone.Danger,
-            Verdict.WatchOut => Tone.Warn,
-            _ => Tone.Accent,
-        };
+        var whole = new ActivityPlace(site.Host, "", site.Time, IsRest: false);
+        StackPanel body = Layout.Column(Space.S5, head, BlockAction(site, whole, rules, Loc.T("block_site", site.Host), ButtonKind.Primary));
 
-        StackPanel row = Layout.Column(Space.S3, head, new Meter(longest > TimeSpan.Zero ? site.Time / longest : 0, bar));
-        foreach (ActivityPlace place in site.Places)
+        if (site.Places.Count > 1)
         {
-            row.Children.Add(PlaceRow(site, place, rules));
+            var parts = new List<Control>();
+            foreach (ActivityPlace place in site.Places)
+            {
+                var partClocks = new ClockFill(place.Time, 18);
+                ToolTip.SetTip(partClocks, Minutes(place.Time));
+                Control action = BlockAction(site, place, rules, Loc.T("block_part"), ButtonKind.Secondary);
+                action.Margin = new Thickness(0, Space.S2, 0, 0);
+                parts.Add(new Card(Layout.Column(Space.S2,
+                    new TextLine(place.IsRest ? Loc.T("rest_of_site", site.Host) : "/" + place.Path, TextStyle.Code),
+                    partClocks,
+                    action), CardStyle.Well, CardPadding.Compact));
+            }
+
+            body.Children.Add(Layout.Tiles(parts, 220, Space.S3));
         }
 
-        return new Band(row, new Thickness(Space.S6, Space.S4));
+        var stop = new PillButton(Loc.T("stop_tracking", site.Host), ButtonKind.Accent);
+        stop.Click += (_, _) => SetTracked(site.Host, false);
+        body.Children.Add(Layout.Column(Space.S3, new Divider(), stop));
+
+        return new Card(body, CardStyle.Surface, CardPadding.Spacious);
     }
 
-    private Control PlaceRow(ActivitySite site, ActivityPlace place, BlockerConfiguration? rules)
+    /// <summary>"Block …" with its choices, or the rule that already limits this place.</summary>
+    private Control BlockAction(ActivitySite site, ActivityPlace place, BlockerConfiguration? rules, string label, ButtonKind kind)
     {
-        Control action;
         if (CoveringRule(place, rules) is { } rule)
         {
-            action = new Chip(Loc.T("in_rule", rule), Tone.Neutral);
-        }
-        else
-        {
-            var block = new PillButton(Loc.T("block"), ButtonKind.Secondary, Glyph.Ban, ButtonSize.Small);
-            block.Click += (_, _) => BlockPlace(site, place);
-            action = block;
+            StackPanel limited = Layout.Row(Space.S2, new Icon(Glyph.Lock, 14, TextTone.Secondary), new TextLine(Loc.T("limited_by", rule), TextStyle.Small));
+            if (_madeRules.TryGetValue(place.Label, out string? madeId) && !_status.StrictMode.IsActive)
+            {
+                var undo = new PillButton(Loc.T("undo"), ButtonKind.Accent, size: ButtonSize.Small);
+                undo.Click += (_, _) => RemoveMadeRule(place.Label, madeId);
+                limited.Children.Add(undo);
+            }
+
+            return limited;
         }
 
-        StackPanel right = Layout.Row(Space.S3, new TextLine(Minutes(place.Time), TextStyle.Caption), action);
-        right.Margin = new Thickness(Space.S3, 0, 0, 0);
-        var line = new DockPanel { LastChildFill = true, Margin = new Thickness(44, 0, 0, 0) };
-        DockPanel.SetDock(right, Dock.Right);
-        line.Children.Add(right);
-        line.Children.Add(place.Path.Length > 0
-            ? new TextLine("/" + place.Path, TextStyle.Code) { SingleLine = true }
-            : new TextLine(place.IsRest ? Loc.T("everything_else") : Loc.T("whole_site"), TextStyle.Small));
-        return line;
+        var block = new PillButton(label, kind, Glyph.Ban) { HorizontalAlignment = HorizontalAlignment.Left };
+        var menu = new PopupMenu(240);
+        menu.AddItem(Loc.T("block_always"), null, () => BlockNow(site, place, null));
+        menu.AddItem(Loc.T("block_after", 5), null, () => BlockNow(site, place, 5));
+        menu.AddItem(Loc.T("block_after", 15), null, () => BlockNow(site, place, 15));
+        menu.AddDivider();
+        menu.AddItem(Loc.T("more_options"), null, () => OpenEditor(RuleFor(site, place), -1, returnTo: Page.Status));
+        block.Click += (_, _) => menu.ShowAt(block);
+        return block;
+    }
+
+    /// <summary>Saves a new rule for this place right away: all day, every day.</summary>
+    private void BlockNow(ActivitySite site, ActivityPlace place, int? minutesPerHour)
+    {
+        EditableConfiguration.EditableRule rule = RuleFor(site, place);
+        rule.BlockCompletely = minutesPerHour is null;
+        rule.AllowanceMinutes = minutesPerHour ?? rule.AllowanceMinutes;
+
+        EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
+        candidate.Rules.Add(rule);
+        if (_controller.TrySaveConfiguration(candidate, out _))
+        {
+            _editable = _controller.GetEditableConfiguration();
+            _madeRules[place.Label] = rule.Id;
+        }
+
+        Rerender();
+    }
+
+    private void RemoveMadeRule(string placeLabel, string ruleId)
+    {
+        EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
+        candidate.Rules.RemoveAll(r => r.Id == ruleId);
+        if (_controller.TrySaveConfiguration(candidate, out _))
+        {
+            _editable = _controller.GetEditableConfiguration();
+            _madeRules.Remove(placeLabel);
+        }
+
+        Rerender();
     }
 
     /// <summary>
-    /// Opens a new rule holding just this place; you choose when it applies. For
-    /// "everything else" the rule blocks the site but keeps the sections listed
-    /// above it open — exactly what the line stands for.
+    /// A new rule holding just this place. For "the rest" the rule blocks the
+    /// site but keeps the parts split out beside it open: exactly what it stands for.
     /// </summary>
-    private void BlockPlace(ActivitySite site, ActivityPlace place)
+    private EditableConfiguration.EditableRule RuleFor(ActivitySite site, ActivityPlace place)
     {
         EditableConfiguration.EditableSite target = EditableConfiguration.EditableSite.FromDocument(SiteMigration.FromUrl(place.Label, place.Url, includeSubpaths: true));
         if (place.IsRest)
@@ -258,28 +354,14 @@ internal sealed partial class MainWindow
         }
 
         EditableConfiguration.EditableRule rule = NewRule();
-        rule.Name = place.Label;
+        rule.Name = PlaceName(place);
         rule.Sites.Add(target);
-        OpenEditor(rule, -1, returnTo: Page.Status);
+        return rule;
     }
 
-    private void SetFine(string host, bool fine)
-    {
-        _fineSites ??= _settings.LoadFineSites();
-        if (fine)
-        {
-            _fineSites.Add(host);
-        }
-        else
-        {
-            _fineSites.Remove(host);
-        }
+    private static string PlaceName(ActivityPlace place) => place.IsRest ? Loc.T("rest_of_site", place.Host) : place.Label;
 
-        _settings.SaveFineSites(_fineSites);
-        Rerender();
-    }
-
-    /// <summary>The rule already covering this place: for a section its own address, for a whole site any page of it.</summary>
+    /// <summary>The rule already limiting this place: for a section its own address, for a site or its rest any page of it.</summary>
     private static string? CoveringRule(ActivityPlace place, BlockerConfiguration? rules)
     {
         if (rules is null)
@@ -305,46 +387,36 @@ internal sealed partial class MainWindow
         }
     }
 
-    private static string? CatalogIdOf(string host) =>
-        SiteCatalog.Sites.FirstOrDefault(s => host == s.Host || host.EndsWith("." + s.Host, StringComparison.Ordinal))?.Id;
+    // ----- Not tracked -----
 
-    /// <summary>What the list shows, to the minute: it's rebuilt only when this changes.</summary>
-    private static string SitesSignature(ActivityReport report) =>
-        string.Join(";", report.Sites.Take(ListedSites).Select(s =>
-            $"{s.Host}:{(int)s.Time.TotalMinutes}:{s.Visits}:{s.Verdict}:{s.MarkedFine}:" +
-            string.Join(",", s.Places.Select(p => $"{p.Path}={(int)p.Time.TotalMinutes}"))))
-        + $"|{report.ShortSites}|{report.Sites.Count}";
+    private HashSet<string> Untracked() => _untracked ??= _settings.LoadUntrackedSites();
 
-    // ----- Achievements -----
-
-    private static bool[] Earned(ActivityReport report, AppStatus status) => new[]
+    /// <summary>Stops (or resumes) recording a site's time; stopping also drops what today already holds.</summary>
+    private void SetTracked(string host, bool tracked)
     {
-        report.BrainRot < CleanLimit,
-        report.Sites.All(s => s.MarkedFine || s.Time < ActivityReport.RotTime),
-        !status.Activity.PausedToday && !status.IsPaused,
-        status.Activity.StrictToday || status.StrictMode.IsActive,
-    };
-
-    private static Control AchievementList(bool[] earned)
-    {
-        var items = new (string Title, string Help)[]
+        HashSet<string> untracked = Untracked();
+        if (tracked)
         {
-            (Loc.T("ach_clean"), Loc.T("ach_clean_help", (int)CleanLimit.TotalMinutes)),
-            (Loc.T("ach_no_binge"), Loc.T("ach_no_binge_help", (int)ActivityReport.RotTime.TotalMinutes)),
-            (Loc.T("ach_no_pause"), Loc.T("ach_no_pause_help")),
-            (Loc.T("ach_locked"), Loc.T("ach_locked_help")),
-        };
-
-        var list = new StackPanel { Spacing = Space.S4 };
-        for (int i = 0; i < items.Length; i++)
+            untracked.Remove(host);
+        }
+        else
         {
-            StackPanel badge = Layout.Row(Space.S3,
-                new Icon(Glyph.Award, 22, earned[i] ? TextTone.Success : TextTone.Tertiary),
-                Layout.Column(Space.S0, new TextLine(items[i].Title, TextStyle.Strong), new TextLine(items[i].Help, TextStyle.Caption)));
-            list.Children.Add(earned[i] ? badge : Layout.Inactive(badge));
+            untracked.Add(host);
         }
 
-        return list;
+        _settings.SaveUntrackedSites(untracked);
+        _controller.SetUntrackedSites(untracked);
+        _status = _controller.Status;
+        _openSite = null;
+        _justUntracked = tracked ? null : host;
+        Rerender();
+    }
+
+    private Control UntrackedNote(string host)
+    {
+        var undo = new PillButton(Loc.T("undo"), ButtonKind.Accent, size: ButtonSize.Small);
+        undo.Click += (_, _) => SetTracked(host, true);
+        return new Banner(Tone.Neutral, Glyph.Check, Banner.Message(Tone.Neutral, new Phrase(Loc.T("no_longer_tracked", host))), undo);
     }
 
     // ----- Formatting -----

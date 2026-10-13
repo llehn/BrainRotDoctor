@@ -145,6 +145,15 @@ internal static class Palette
     public const string WarnBorder = "Ds.WarnBorder";
     public const string WarnText = "Ds.WarnText";
     public const string Knob = "Ds.Knob";
+    public const string Scrim = "Ds.Scrim";
+    public const string TileInset = "Ds.TileInset";
+    public const string ClockTrack = "Ds.ClockTrack";
+
+    /// <summary>Tile colours: they tell neighbouring tiles apart and mean nothing else.</summary>
+    public static readonly string[] Tiles = { "Ds.Tile1", "Ds.Tile2", "Ds.Tile3", "Ds.Tile4", "Ds.Tile5", "Ds.Tile6", "Ds.Tile7", "Ds.Tile8" };
+
+    /// <summary>Clock fills, from little time to a lot: the more time, the stronger.</summary>
+    public static readonly string[] Clocks = { "Ds.Clock1", "Ds.Clock2", "Ds.Clock3", "Ds.Clock4", "Ds.Clock5" };
 
     /// <summary>The light and dark values of every role. Mirrored in docs/foundations.md.</summary>
     internal static readonly (string Key, string Light, string Dark)[] Values =
@@ -175,6 +184,22 @@ internal static class Palette
         (WarnBorder, "#EBD3A0", "#5C4920"),
         (WarnText, "#5C3D00", "#F2C76B"),
         (Knob, "#FFFFFF", "#FFFFFF"),
+        (Scrim, "#7316171B", "#99000000"),
+        ("Ds.Tile1", "#CFE3F3", "#22384A"),
+        ("Ds.Tile2", "#F6D6C8", "#4A3026"),
+        ("Ds.Tile3", "#D9EBCF", "#2B3F29"),
+        ("Ds.Tile4", "#EBD9F2", "#3D2D45"),
+        ("Ds.Tile5", "#F7E7B9", "#463C1F"),
+        ("Ds.Tile6", "#CDEBE6", "#1F403B"),
+        ("Ds.Tile7", "#F3D3DE", "#462A35"),
+        ("Ds.Tile8", "#DCDDF5", "#2E3050"),
+        (TileInset, "#80FFFFFF", "#1FFFFFFF"),
+        (ClockTrack, "#1A16171B", "#2EFFFFFF"),
+        ("Ds.Clock1", "#8CCBC1", "#2F6F66"),
+        ("Ds.Clock2", "#4FAA9D", "#3E9E91"),
+        ("Ds.Clock3", "#1F8A7E", "#56BCAE"),
+        ("Ds.Clock4", "#0B6B63", "#86D8CB"),
+        ("Ds.Clock5", "#063F3A", "#C2F2EA"),
     };
 
     public static ResourceDictionary Build()

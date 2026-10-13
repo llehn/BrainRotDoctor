@@ -156,29 +156,43 @@ public class ActivityTests
         Assert.Equal(new[] { "shorts", "watch" }, report.Sites[0].Places.Select(p => p.Path));
     }
 
-    [Theory]
-    [InlineData(31, 1, Verdict.BrainRot)]
-    [InlineData(11, 12, Verdict.BrainRot)]
-    [InlineData(16, 1, Verdict.WatchOut)]
-    [InlineData(6, 7, Verdict.WatchOut)]
-    [InlineData(9, 3, Verdict.Fine)]
-    public void The_verdict_follows_time_and_how_often_you_come_back(double minutes, int visits, Verdict expected)
+    [Fact]
+    public void Sites_come_longest_first_and_ones_under_a_minute_only_count_toward_the_total()
     {
-        Assert.Equal(expected, ActivityReport.Judge(TimeSpan.FromMinutes(minutes), visits));
+        ActivityReport report = ActivityReport.Build(Record(("tiktok.com", 40, 3), ("work.com", 90, 2), ("news.com", 5, 2), ("tiny.com", 0.5, 1)));
+
+        Assert.Equal(TimeSpan.FromMinutes(135.5), report.Total);
+        Assert.Equal(new[] { "work.com", "tiktok.com", "news.com" }, report.Sites.Select(s => s.Host));
+    }
+
+    // ---------- Not tracked ----------
+
+    [Fact]
+    public void An_untracked_site_is_never_counted_and_what_it_had_today_is_dropped()
+    {
+        var tally = new ActivityTally();
+        DateTimeOffset t = Stay(tally, "https://reddit.com/r/a", T0, 10);
+        t = Stay(tally, "https://github.com/x", t, 10);
+
+        tally.SetUntracked(new[] { "www.reddit.com" });
+        Assert.DoesNotContain(tally.Snapshot().Places.Keys, k => k.StartsWith("reddit.com", StringComparison.Ordinal));
+
+        t = Stay(tally, "https://reddit.com/r/a", t, 10);
+        Assert.DoesNotContain(tally.Snapshot().Places.Keys, k => k.StartsWith("reddit.com", StringComparison.Ordinal));
+        Assert.Equal(10, tally.Snapshot().Places["github.com"].Seconds, 3);
+
+        tally.SetUntracked(Array.Empty<string>());
+        Stay(tally, "https://reddit.com/r/a", t, 10);
+        Assert.Equal(10, tally.Snapshot().Places["reddit.com"].Seconds, 3);
     }
 
     [Fact]
-    public void Brain_rot_adds_up_rotten_sites_only_and_never_ones_marked_fine()
+    public void Restored_totals_lose_sites_that_are_not_tracked()
     {
-        ActivityRecord record = Record(("tiktok.com", 40, 3), ("work.com", 90, 2), ("news.com", 5, 2), ("tiny.com", 0.5, 1));
-        ActivityReport report = ActivityReport.Build(record, new HashSet<string> { "work.com" });
+        var tally = new ActivityTally();
+        tally.SetUntracked(new[] { "reddit.com" });
+        tally.Restore(Record(("reddit.com", 20, 2), ("github.com", 30, 1)), T0);
 
-        Assert.Equal(TimeSpan.FromMinutes(40), report.BrainRot);
-        Assert.Equal(TimeSpan.FromMinutes(135.5), report.Total);
-        Assert.Equal(1, report.ShortSites);
-        ActivitySite work = report.Sites.Single(s => s.Host == "work.com");
-        Assert.True(work.MarkedFine);
-        Assert.Equal(Verdict.Fine, work.Verdict);
-        Assert.Equal(new[] { "work.com", "tiktok.com", "news.com" }, report.Sites.Select(s => s.Host));
+        Assert.Equal(new[] { "github.com" }, tally.Snapshot().Places.Keys);
     }
 }

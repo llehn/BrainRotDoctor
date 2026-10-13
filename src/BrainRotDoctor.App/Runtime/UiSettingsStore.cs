@@ -10,7 +10,7 @@ internal enum ThemePreference
     Dark,
 }
 
-/// <summary>Persists small UI preferences: theme, language, and the sites you marked as fine.</summary>
+/// <summary>Persists small preferences: theme, language, and the sites you don't want tracked.</summary>
 internal sealed class UiSettingsStore
 {
     private readonly string _path;
@@ -61,13 +61,13 @@ internal sealed class UiSettingsStore
         Write(state);
     }
 
-    /// <summary>Sites you said aren't brain rot, by host; the status view never judges them.</summary>
-    public HashSet<string> LoadFineSites() => new(Read().FineSites ?? new(), StringComparer.Ordinal);
+    /// <summary>Sites you said are fine, by host: their time is not recorded at all.</summary>
+    public HashSet<string> LoadUntrackedSites() => new(Read().UntrackedSites ?? new(), StringComparer.Ordinal);
 
-    public void SaveFineSites(IEnumerable<string> hosts)
+    public void SaveUntrackedSites(IEnumerable<string> hosts)
     {
         State state = Read();
-        state.FineSites = hosts.OrderBy(h => h, StringComparer.Ordinal).ToList();
+        state.UntrackedSites = hosts.OrderBy(h => h, StringComparer.Ordinal).ToList();
         Write(state);
     }
 
@@ -102,6 +102,6 @@ internal sealed class UiSettingsStore
     {
         public string Theme { get; set; } = nameof(ThemePreference.System);
         public string Language { get; set; } = "auto";
-        public List<string>? FineSites { get; set; }
+        public List<string>? UntrackedSites { get; set; }
     }
 }

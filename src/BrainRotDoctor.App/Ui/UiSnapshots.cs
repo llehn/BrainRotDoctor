@@ -91,8 +91,8 @@ internal static class UiSnapshots
     {
         var places = new (string Key, double Minutes, int Visits)[]
         {
-            ("reddit.com", 74, 23), ("reddit.com/r", 68, 21), ("reddit.com/r/formula1", 61, 19),
-            ("reddit.com/r/formula1/comments", 55, 17), ("reddit.com/r/pics", 7, 2),
+            ("reddit.com", 134, 23), ("reddit.com/r", 125, 21), ("reddit.com/r/formula1", 118, 19),
+            ("reddit.com/r/formula1/comments", 110, 17), ("reddit.com/r/pics", 7, 2),
             ("youtube.com", 41, 9), ("youtube.com/shorts", 22, 6), ("youtube.com/watch", 16, 4),
             ("github.com", 96, 6), ("github.com/llehn", 60, 4), ("github.com/dotnet", 30, 3),
             ("news.ycombinator.com", 18, 8), ("news.ycombinator.com/item", 14, 6),
@@ -174,11 +174,14 @@ internal static class UiSnapshots
             }
 
             await Task.Delay(1500);
-            await Shot("00-status", 1100);
-            window.PreviewBlockFromStatus("reddit.com", 1);
-            await Shot("00b-block-everything-else", 900);
-            window.PreviewBlockFromStatus("reddit.com", 0);
-            await Shot("00c-block-section", 900);
+            await Shot("00-status");
+            window.PreviewSite("reddit.com");
+            await Shot("00b-status-site", 900);
+            window.PreviewSite(null);
+            window.PreviewStrictActivating();
+            await Shot("00c-status-activating");
+            window.PreviewStrictCancel();
+            await Shot("00d-status-narrow", 640, 1000);
             window.PreviewPage("home");
             await Shot("01-home");
 
@@ -224,23 +227,28 @@ internal static class UiSnapshots
 
             window.PreviewPage("settings");
             await Shot("09-settings");
+            window.PreviewUntracked();
+            await Shot("09b-settings-untracked");
 
             RequestedThemeVariant = ThemeVariant.Dark;
             window.PreviewPage("status");
-            await Shot("10a-status-dark", 1100);
+            await Shot("10a-status-dark");
+            window.PreviewSite("reddit.com");
+            await Shot("10b-status-site-dark", 900);
+            window.PreviewSite(null);
             window.PreviewPage("home");
             await Shot("10-home-dark");
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");
             await Shot("11-editor-dark", 1500);
             RequestedThemeVariant = ThemeVariant.Light;
 
-            _controller.ActivateStrictMode(TimeSpan.FromHours(4), new[] { DefaultConfiguration.ShortVideoRuleId, DefaultConfiguration.FeedsRuleId });
+            _controller.ActivateStrictMode(TimeSpan.FromHours(4));
             window.PreviewPage("strict");
             await Shot("12-strict-running");
             window.PreviewPage("home");
             await Shot("13-home-strict");
             window.PreviewPage("status");
-            await Shot("14-status-strict", 1100);
+            await Shot("14-status-strict");
 
             await CaptureGallery("gallery-light", ThemeVariant.Light);
             await CaptureGallery("gallery-dark", ThemeVariant.Dark);
@@ -289,11 +297,25 @@ internal sealed partial class MainWindow
 
     internal void PreviewNewRule() => OpenEditor(NewRule(), -1);
 
-    /// <summary>The rule "Block" opens from the status view, for a site's line at <paramref name="placeIndex"/>.</summary>
-    internal void PreviewBlockFromStatus(string host, int placeIndex)
+    /// <summary>The status view with a site enlarged, or none.</summary>
+    internal void PreviewSite(string? host)
     {
-        ActivitySite site = ActivityReport.Build(_controller.Status.Activity).Sites.First(s => s.Host == host);
-        BlockPlace(site, site.Places[placeIndex]);
+        _status = _controller.Status;
+        _openSite = host;
+        Navigate(Page.Status);
+    }
+
+    /// <summary>A strict mode shortcut just clicked: the moment to cancel. Never fires (<see cref="PreviewStrictCancel"/>).</summary>
+    internal void PreviewStrictActivating() => BeginStrict(DateTimeOffset.Now.AddHours(2));
+
+    internal void PreviewStrictCancel() => CancelStrict();
+
+    /// <summary>Settings with some sites not tracked, the list shown.</summary>
+    internal void PreviewUntracked()
+    {
+        _untracked = new HashSet<string>(StringComparer.Ordinal) { "github.com", "mail.google.com", "docs.avaloniaui.net" };
+        _showUntracked = true;
+        Rerender();
     }
 
     internal void PreviewAddSites(params string[] picks)

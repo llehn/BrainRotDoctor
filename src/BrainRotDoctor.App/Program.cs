@@ -136,6 +136,7 @@ internal static class Program
             loaded.FilePath,
             strictModeStore,
             TryGetOption(args, "--log", "-l"));
+        controller.SetUntrackedSites(uiSettings.LoadUntrackedSites());
 
         controller.Start();
         try
@@ -281,12 +282,28 @@ internal static class Program
     {
         LoadedConfiguration loaded = LoadUserConfiguration(args);
 
-        // While strict mode runs, its locked rules win over whatever the file now
-        // says (a hand edit can't undo the lock); every other rule stays editable.
-        string locked = strictModeStore.ApplyLock(loaded.Json);
-        return locked == loaded.Json
+        // While strict mode is on, a hand edit of the file can only make things
+        // stricter: any rule it changed, switched off or removed comes back as
+        // the app last accepted it.
+        var baseline = new RuleBaselineStore();
+        string json = loaded.Json;
+        if (strictModeStore.GetSnapshot().IsActive && baseline.Load() is { } accepted)
+        {
+            try
+            {
+                json = RuleGuard.Restore(accepted, loaded.Json);
+                ConfigurationLoader.Load(json);
+            }
+            catch (ConfigurationException)
+            {
+                json = loaded.Json;
+            }
+        }
+
+        baseline.Save(json);
+        return json == loaded.Json
             ? loaded
-            : new LoadedConfiguration(ConfigurationLoader.Load(locked), loaded.Source, locked, loaded.FilePath);
+            : new LoadedConfiguration(ConfigurationLoader.Load(json), loaded.Source, json, loaded.FilePath);
     }
 
     private static LoadedConfiguration LoadUserConfiguration(string[] args)

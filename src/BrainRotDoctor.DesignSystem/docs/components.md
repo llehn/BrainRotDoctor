@@ -223,6 +223,35 @@ A literal value in a list, removed with its ×. Raises `Removed`.
 The overall state of the app at a glance: dot, title, detail. `inverted` (ink)
 for the most serious state.
 
+## Maps of time
+
+### `ClockFill`
+An amount of time as clock faces: one circle per hour, the last one filling
+like a pie. The fill gets stronger with the total (under half an hour, under
+an hour, under two, under three, more), so a lot of time stands out without
+reading a number. At most `MaxCircles` (12) circles. `SetTime`, `SetSize`.
+
+**Don't** print the exact time next to it: put it in a tooltip, if anywhere.
+
+### `TileMap`
+Tiles filling all of their space, each with an area in proportion to its
+weight (`Add(tile, weight)`, heaviest first): how a whole divides up, at a
+glance. `Gap` between tiles (8 by default). Give it a fixed size or a parent
+that doesn't scroll; it fills whatever it gets.
+
+### `MapTile`
+A tile of a `TileMap`: a coloured block with a title and a `ClockFill`, and
+optionally a `TileMap` of smaller tiles inside. Title and clocks grow with the
+tile; what doesn't fit is left out (the inner tiles first). `colour` picks one
+of the tile colours, which only tell neighbours apart. Top-level tiles are
+clickable (`Click`); `nested` ones sit inside another tile, lighter, with a
+literal (mono) title.
+
+### `Overlay`
+A sheet over a dimmed screen: one thing looked at closely, with its actions
+(pass a `Card`). Capped at 680 wide and scrolls when tall. A tap beside the
+sheet or Escape raises `Dismissed`; the screen then rebuilds without it.
+
 ## Navigation and layout
 
 ### `NavItem`
@@ -239,7 +268,8 @@ the actions on the right.
 
 ### `SidebarLayout`
 The main layout: sidebar (navigation on top, `StatusPanel` at the bottom) and
-the scrolling content.
+the scrolling content. `scrolls: false` makes the content exactly the window's
+height instead, for a screen that fills it (a `TileMap`).
 
 ### `FullPageLayout`
 A full-window screen: `TopBar` and a scrolling body capped at 1280 wide.

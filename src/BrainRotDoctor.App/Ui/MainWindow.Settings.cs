@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using BrainRotDoctor.App.Runtime;
@@ -50,7 +51,51 @@ internal sealed partial class MainWindow
         page.Children.Add(new Group(Loc.T("look_and_language"),
             new FormRow(Loc.T("appearance"), Loc.T("appearance_help"), theme),
             new FormRow(Loc.T("language"), Loc.T("language_help"), language)));
+        if (UntrackedGroup() is { } untracked)
+        {
+            page.Children.Add(untracked);
+        }
+
         page.Children.Add(new Group(Loc.T("about"), Group.Row(about)));
         return page;
+    }
+
+    private bool _showUntracked;
+
+    /// <summary>The sites you said are fine: behind a button, since nobody needs to see that list at a glance.</summary>
+    private Control? UntrackedGroup()
+    {
+        HashSet<string> untracked = Untracked();
+        if (untracked.Count == 0)
+        {
+            return null;
+        }
+
+        var toggle = new PillButton(Loc.T(_showUntracked ? "hide" : "show"));
+        toggle.Click += (_, _) =>
+        {
+            _showUntracked = !_showUntracked;
+            Rerender();
+        };
+
+        var head = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(toggle, Dock.Right);
+        toggle.Margin = new Thickness(Space.S4, 0, 0, 0);
+        head.Children.Add(toggle);
+        head.Children.Add(new TextLine(Loc.T("untracked_help"), TextStyle.Small));
+        if (!_showUntracked)
+        {
+            return new Group(Loc.T("untracked_sites"), Group.Row(head));
+        }
+
+        var sites = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S3, LineSpacing = Space.S2 };
+        foreach (string host in untracked.OrderBy(h => h, StringComparer.Ordinal))
+        {
+            var again = new PillButton(Loc.T("track_again"), ButtonKind.Accent, size: ButtonSize.Small);
+            again.Click += (_, _) => SetTracked(host, true);
+            sites.Children.Add(new Card(Layout.Row(Space.S2, new TextLine(host, TextStyle.Strong), again), CardStyle.Inset, CardPadding.Compact));
+        }
+
+        return new Group(Loc.T("untracked_sites"), Group.Row(head), Group.Row(sites));
     }
 }

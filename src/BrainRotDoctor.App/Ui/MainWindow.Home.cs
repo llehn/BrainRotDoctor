@@ -94,7 +94,10 @@ internal sealed partial class MainWindow
 
     private Control RuleCard(EditableConfiguration.EditableRule rule, int index)
     {
-        bool locked = _status.StrictMode.IsLocked(rule.Id);
+        // While strict mode is on, rules only tighten: a rule that's off can still
+        // be switched on, but nothing else about any rule can change.
+        bool strict = _status.StrictMode.IsActive;
+        bool locked = strict && rule.Enabled;
 
         var chip = new Chip("");
         var onOff = new OnOffSwitch(rule.Enabled) { Margin = new Thickness(10, 0, 0, 0) };
@@ -150,7 +153,7 @@ internal sealed partial class MainWindow
         body.Children.Add(footer);
 
         var card = new Card(body) { MinHeight = 224 };
-        if (!locked)
+        if (!strict)
         {
             card.Click += (_, _) => OpenEditor(rule.Clone(), index);
         }
@@ -258,9 +261,7 @@ internal sealed partial class MainWindow
 
     private string NextId()
     {
-        var existing = _editable.Rules.Select(r => r.Id)
-            .Concat(_status.StrictMode.LockedRuleIds)
-            .ToHashSet(StringComparer.Ordinal);
+        var existing = _editable.Rules.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
         for (int i = 1; ; i++)
         {
             string candidate = $"rule-{i}";
