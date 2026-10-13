@@ -281,7 +281,7 @@ internal sealed class EnforcementController : IDisposable
             lock (_browserLock)
             {
                 windows = _observer.GetSelectedTabs();
-                WriteLog(now, $"observed {windows.Count} window(s): {string.Join(" || ", windows.Select(w => $"{w.BrowserName}:{w.WindowId}:{w.Url?.AbsoluteUri ?? "(null)"}"))}");
+                WriteLog(now, $"observed {windows.Count} window(s): {string.Join(" || ", windows.Select(Describe))}");
 
                 // While paused the engine still ticks (so hours roll over and the
                 // clock stays current) but sees no tabs: nothing is charged or closed.
@@ -541,13 +541,16 @@ internal sealed class EnforcementController : IDisposable
     /// <summary>
     /// Counts the page in front toward today's statistics — also while paused, since
     /// they describe what you did, not what was enforced — and stores them now and then.
+    /// A private window is never counted: Status is a diary, and private browsing
+    /// is the user saying this visit did not happen. Blocking still sees that window.
     /// </summary>
     private void RecordActivity(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows)
     {
-        Uri? front = windows.FirstOrDefault(w => w.IsForeground)?.Url;
+        ObservedBrowserWindow? front = windows.FirstOrDefault(w => w.IsForeground);
+        Uri? url = front is { IsPrivate: false } ? front.Url : null;
         lock (_sync)
         {
-            _activity.Tick(front, now);
+            _activity.Tick(url, now);
             if (_pause?.IsActiveAt(now) == true)
             {
                 _activity.MarkPaused(now);
@@ -586,6 +589,11 @@ internal sealed class EnforcementController : IDisposable
 
         StatusChanged?.Invoke(this, status);
     }
+
+    private static string Describe(ObservedBrowserWindow window) =>
+        window.IsPrivate
+            ? $"{window.BrowserName}:{window.WindowId}:(private)"
+            : $"{window.BrowserName}:{window.WindowId}:{window.Url?.AbsoluteUri ?? "(null)"}";
 
     private void WriteLog(DateTimeOffset now, string message)
     {

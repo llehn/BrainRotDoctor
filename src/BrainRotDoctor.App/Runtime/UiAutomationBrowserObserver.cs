@@ -37,8 +37,14 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
                 _trackers[handle] = tracker;
             }
 
-            Uri? url = TryReadUrl(handle, browserName!, tracker, handle == foreground);
-            result.Add(new ObservedBrowserWindow(handle.ToInt64().ToString(), handle, browserName!, url, handle == foreground));
+            (Uri? url, bool isPrivate) = TryReadWindow(handle, browserName!, tracker, handle == foreground);
+            result.Add(new ObservedBrowserWindow(
+                handle.ToInt64().ToString(),
+                handle,
+                browserName!,
+                url,
+                handle == foreground,
+                isPrivate));
         }
 
         foreach (IntPtr gone in _trackers.Keys.Where(h => result.All(w => w.WindowHandle != h)).ToArray())
@@ -64,7 +70,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             _trackers[windowHandle] = tracker;
         }
 
-        return TryReadUrl(windowHandle, browserName!, tracker, windowHandle == NativeMethods.GetForegroundWindow());
+        return TryReadWindow(windowHandle, browserName!, tracker, windowHandle == NativeMethods.GetForegroundWindow()).Url;
     }
 
     private static IEnumerable<IntPtr> EnumerateBrowserWindows()
@@ -107,35 +113,98 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         }
     }
 
-    private static Uri? TryReadUrl(IntPtr handle, string browserName, AddressBarTracker tracker, bool isForeground)
+    private static (Uri? Url, bool IsPrivate) TryReadWindow(IntPtr handle, string browserName, AddressBarTracker tracker, bool isForeground)
     {
+        string title = NativeMethods.GetWindowTitle(handle);
         try
         {
             AutomationElement root = AutomationElement.FromHandle(handle);
+            bool isPrivate = IsPrivateWindow(title, root);
             bool isFirefox = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase);
 
             // Firefox reports the loaded page's own address, which is never typed text.
             if (isFirefox && TryReadFirefoxPageAddress(root, out Uri? page))
             {
-                return tracker.Confirm(page);
+                return (tracker.Confirm(page), isPrivate);
             }
 
             // Otherwise fall back to the address bar, guarded against unsent typing.
             AddressBarReading? bar = isFirefox ? TryReadFirefoxAddressBar(root) : TryReadChromiumAddressBar(root);
-            return tracker.Resolve(
-                bar?.Text,
-                bar?.HasFocus == true,
-                isForeground,
-                NativeMethods.GetWindowTitle(handle));
+            return (tracker.Resolve(bar?.Text, bar?.HasFocus == true, isForeground, title), isPrivate);
         }
         catch (ElementNotAvailableException)
         {
-            return null;
+            return (null, PrivateBrowsing.LooksPrivate(title));
         }
         catch (InvalidOperationException)
         {
-            return null;
+            return (null, PrivateBrowsing.LooksPrivate(title));
         }
+    }
+
+    /// <summary>
+    /// Private sessions are marked on the window chrome, never on the page: the
+    /// title, the accessibility name of the window and its children, and toolbar
+    /// buttons above the page. A page titled "Incognito" is not a private window.
+    /// </summary>
+    private static bool IsPrivateWindow(string title, AutomationElement root)
+    {
+        if (PrivateBrowsing.LooksPrivate(title) || PrivateBrowsing.LooksPrivate(root.Current.Name))
+        {
+            return true;
+        }
+
+        try
+        {
+            foreach (AutomationElement child in root.FindAll(TreeScope.Children, Condition.TrueCondition).Cast<AutomationElement>())
+            {
+                if (PrivateBrowsing.LooksPrivate(child.Current.Name))
+                {
+                    return true;
+                }
+            }
+
+            return ToolbarLooksPrivate(root);
+        }
+        catch (ElementNotAvailableException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ToolbarLooksPrivate(AutomationElement root)
+    {
+        AutomationElement? document = root.FindFirst(
+            TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
+        double pageTop = document is null ? double.MaxValue : document.Current.BoundingRectangle.Top;
+
+        int seen = 0;
+        foreach (AutomationElement button in root.FindAll(
+            TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>())
+        {
+            if (button.Current.BoundingRectangle.Top >= pageTop)
+            {
+                continue;
+            }
+
+            if (PrivateBrowsing.LooksPrivateButton(button.Current.Name))
+            {
+                return true;
+            }
+
+            if (++seen >= 40)
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

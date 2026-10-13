@@ -51,7 +51,9 @@ parts (always, or after 5 or 15 minutes an hour, saved at once; "More options"
 opens the rule editor), or "It's fine. Stop tracking": that site's time is then
 not recorded at all, and what today already held for it is dropped (the list is
 in Settings, behind a button). Only the page in the foreground browser window
-counts. Time is kept as **statistics, not history**: totals per site and per
+counts. A private window (Incognito, InPrivate, Private Browsing) is still
+watched and still closed when a rule blocks it; it is never added to Status.
+Time is kept as **statistics, not history**: totals per site and per
 path section (cut off at the first section that names a single item, such as an
 ID or a post title), with no timestamps and no page addresses, held on this PC
 for today only and cleared at midnight (`src/BrainRotDoctor.Core/Activity`).
@@ -1062,6 +1064,59 @@ and the graphics card was slow at filling the scene's many fine outlines.
 - The scene has no words, so the closed site's name is no longer shown anywhere
   (the user was just on it).
 - The pop sound plays through Windows and follows the system volume and mute.
+
+### ADR-013: Private Windows Are Enforced, Never Diary Entries
+
+- **Status:** Accepted
+- **Date:** 2026-10-13
+
+#### Context
+
+Status is a mirror of today's browser time, not a verdict. Opening a site in a
+private window (Chrome Incognito, Edge InPrivate, Firefox Private Browsing) is
+the user saying that visit did not happen. Those pages were still visible to
+UI Automation, so they appeared on Status — a privacy bug. Private mode must
+also not become a way around blocking: the product exists to close
+doom-scrolling surfaces even when the user tries to dodge.
+
+#### Decision
+
+- **Still a browser window for blocking.** Every on-screen private window is
+  observed. If a rule blocks the selected tab, that tab is closed the same way
+  as in an ordinary window. Private time still burns the hourly allowance.
+- **Never a diary entry.** The selected tab of a private window is not counted
+  toward Status. If that window is the one in front, Status records nothing for
+  that tick — not the site, not a host, not a visit.
+- **Recognized from the window chrome, not the page.** The browser itself marks
+  a private session on the title, the accessibility name of the window, or a
+  toolbar control (Edge's `[InPrivate]`, Firefox's "Private Browsing", Chrome's
+  Incognito control — including Chrome builds that keep the marker out of the
+  title). A page titled "Incognito" in an ordinary window is not a private
+  window.
+
+#### Rejected Alternatives
+
+**Ignore private windows entirely (neither count nor close)**
+
+Rejected because private mode would then be a loophole: unlimited Reels in an
+incognito window.
+
+**Treat private windows like any other window, including on Status**
+
+Rejected because Status is a diary of the day, and private browsing is an
+explicit request that this visit not be part of it.
+
+**Trust the process command line (`--incognito`, `-private-window`)**
+
+Rejected because one browser process can own both an ordinary window and a
+private window. The marker has to be per window.
+
+#### Consequences
+
+- Private browsing no longer appears on Status.
+- Rules still apply in private windows; incognito is not an escape.
+- Time already counted from private visits before this change cannot be
+  unpicked.
 
 ## Contributing, License, and Security
 
