@@ -107,13 +107,23 @@ public sealed class PrivateWindowEnforcementTests
 
         public ConcurrentQueue<IntPtr> Closed { get; } = new();
 
-        public IReadOnlyList<ObservedBrowserWindow> GetSelectedTabs() =>
-            new[] { new ObservedBrowserWindow("w1", Handle, "Chrome", new Uri(Url), isForeground: true, isPrivate: IsPrivate) };
+        private volatile bool _open = true;
 
-        public Uri? ReadSelectedUrl(IntPtr windowHandle) => windowHandle == Handle ? new Uri(Url) : null;
+        public IReadOnlyList<ObservedBrowserWindow> GetSelectedTabs() =>
+            _open
+                ? new[] { new ObservedBrowserWindow("w1", Handle, "Chrome", new Uri(Url), isForeground: true, isPrivate: IsPrivate) }
+                : Array.Empty<ObservedBrowserWindow>();
+
+        public Uri? ReadSelectedUrl(IntPtr windowHandle) => _open && windowHandle == Handle ? new Uri(Url) : null;
 
         public bool CloseSelectedTab(IntPtr windowHandle)
         {
+            if (windowHandle != Handle || !_open)
+            {
+                return false;
+            }
+
+            _open = false;
             Closed.Enqueue(windowHandle);
             return true;
         }
