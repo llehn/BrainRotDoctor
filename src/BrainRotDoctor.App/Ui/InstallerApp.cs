@@ -39,6 +39,9 @@ internal sealed class InstallerApp : Application
 internal sealed class InstallerWindow : AppWindow
 {
     private readonly InstallOptions _options;
+    private readonly PillButton _install;
+    private readonly PillButton _cancel;
+    private bool _busy;
 
     public InstallerWindow(InstallOptions options)
     {
@@ -58,12 +61,12 @@ internal sealed class InstallerWindow : AppWindow
             HorizontalAlignment = HorizontalAlignment.Center,
         };
 
-        var install = new PillButton(Loc.T("install"), ButtonKind.Primary);
-        install.Click += (_, _) => DoInstall();
-        var cancel = new PillButton(Loc.T("not_now"), ButtonKind.Ghost);
-        cancel.Click += (_, _) => Close();
+        _install = new PillButton(Loc.T("install"), ButtonKind.Primary);
+        _install.Click += (_, _) => DoInstall();
+        _cancel = new PillButton(Loc.T("not_now"), ButtonKind.Ghost);
+        _cancel.Click += (_, _) => Close();
 
-        StackPanel actions = Layout.Row(10, cancel, install);
+        StackPanel actions = Layout.Row(10, _cancel, _install);
         actions.HorizontalAlignment = HorizontalAlignment.Right;
 
         Content = new StackPanel
@@ -80,23 +83,39 @@ internal sealed class InstallerWindow : AppWindow
         };
     }
 
-    private void DoInstall()
+    private async void DoInstall()
     {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _install.Enabled = false;
+        _cancel.Enabled = false;
+
         try
         {
-            // A fresh install copies and launches here; an upgrade over a running
-            // build hands the swap to the applier, which relaunches the app itself.
-            if (SelfInstall.Run(_options, new DetachedApplyLauncher()))
+            // Copy, registry, and launch stay off the UI thread. A fresh install
+            // launches here; an upgrade over a running build hands the swap to
+            // the applier, which relaunches the app itself.
+            await Task.Run(() =>
             {
-                var installer = new Installer(_options);
-                Process.Start(new ProcessStartInfo(installer.InstalledExePath) { UseShellExecute = true });
-            }
+                if (SelfInstall.Run(_options, new DetachedApplyLauncher()))
+                {
+                    var installer = new Installer(_options);
+                    Process.Start(new ProcessStartInfo(installer.InstalledExePath) { UseShellExecute = true });
+                }
+            }).ConfigureAwait(true);
 
             Close();
         }
         catch (Exception ex)
         {
             NativeMethods.MessageBoxW(IntPtr.Zero, ex.Message, Loc.T("install_failed"), NativeMethods.MB_ICONERROR);
+            _busy = false;
+            _install.Enabled = true;
+            _cancel.Enabled = true;
         }
     }
 }
