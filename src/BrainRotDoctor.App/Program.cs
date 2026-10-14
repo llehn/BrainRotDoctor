@@ -90,7 +90,7 @@ internal static class Program
         if (!Installer.IsRunningFrom(installer.InstalledExePath, currentExe)
             && !HasFlag(args, "--no-install-prompt"))
         {
-            BuildInstallerApp(installOptions).StartWithClassicDesktopLifetime(args);
+            UiStartRetry.Run(() => BuildInstallerApp(installOptions), args);
             return;
         }
 
@@ -140,7 +140,7 @@ internal static class Program
         controller.Start();
         try
         {
-            BuildAvaloniaApp(controller, uiSettings).StartWithClassicDesktopLifetime(args);
+            UiStartRetry.Run(() => BuildAvaloniaApp(controller, uiSettings), args);
         }
         finally
         {

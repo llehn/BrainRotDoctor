@@ -83,15 +83,14 @@ the active culture. A test verifies every language has every key with matching
 placeholders. (Translations are machine-assisted; have a native speaker review
 before release.)
 
-The website download is **`BrainRotDoctor-Setup.exe`**: a small starter in front
-of the self-contained app (ADR-014). The first double-click retries if unpacked
-native libraries are not ready yet, then shows the same one-click, no-admin
-installer (ADR-008). Install copies the real app per-user under
-`%LOCALAPPDATA%\Programs`, registers autostart, and adds an "Apps & features"
-entry. Uninstalling from Windows Settings runs the app's own code and **refuses
-while strict mode is active** — manual file deletion still works, but the easy
-three-click uninstall does not. Silent auto-update still swaps the real app in
-Programs, not the starter.
+It ships as a single self-contained **`BrainRotDoctor.exe`** that doubles as a
+one-click, no-admin installer (ADR-008, ADR-015): running the downloaded exe
+offers to install it per-user under `%LOCALAPPDATA%\Programs`, register autostart,
+and add an "Apps & features" entry. If native libraries are not ready yet on
+that first start, it waits and starts itself again so the Install window still
+appears. Uninstalling from Windows Settings runs the app's own code and
+**refuses while strict mode is active** — manual file deletion still works, but
+the easy three-click uninstall does not.
 
 ### Build and test
 
@@ -157,26 +156,21 @@ push to `master` and installed apps update themselves within hours. See
 [tools/release/README.md](tools/release/README.md) for the one-time signing-key
 setup.
 
-To produce the distributable locally (starter + app, no runtime needed on the
-target):
+To produce the single-file distributable locally (one downloadable exe, no runtime
+needed on the target):
 
 ```sh
 dotnet publish src/BrainRotDoctor.App -c Release -r win-x64 --self-contained true ^
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
   -p:EnableCompressionInSingleFile=true -o publish
-
-dotnet publish src/BrainRotDoctor.Starter -c Release -r win-x64 --self-contained true ^
-  -p:PublishAot=true -o publish\starter
-
-pwsh tools/release/pack-setup.ps1 -Starter publish\starter\BrainRotDoctor.Starter.exe ^
-  -App publish\BrainRotDoctor.exe -Out publish\BrainRotDoctor-Setup.exe
 ```
 
-The app is a single compressed exe (~71&nbsp;MB) that self-extracts at launch;
-installed size is unaffected. `publish\BrainRotDoctor-Setup.exe` is what a user
-downloads and double-clicks. `publish\BrainRotDoctor.exe` is what silent update
-swaps into Programs. Uninstall still runs `--uninstall` on the installed app
-(which refuses during strict mode).
+Compression keeps it a single double-click exe (~71&nbsp;MB) that self-extracts at
+launch; installed size is unaffected.
+
+The resulting `publish\BrainRotDoctor.exe` is what a user downloads and
+double-clicks. It self-installs (`--install`), and the registered uninstall runs
+`--uninstall` (which refuses during strict mode).
 
 Closing the window leaves enforcement running in the tray. The UI is navigation,
 not a single dense screen: **Home** is a grid of rule cards (each showing its
@@ -769,7 +763,7 @@ harsh black/white "dark" theme and a prominent theme switch.
 
 ### ADR-008: Per-User Self-Installer with Strict-Mode-Aware Uninstall
 
-- **Status:** Accepted; amended by ADR-014 (the website download is a starter in front of this exe)
+- **Status:** Accepted; amended by ADR-015 (first-start retry lives in this exe)
 - **Date:** 2026-06-21
 
 #### Context
@@ -1128,9 +1122,10 @@ private window. The marker has to be per window.
 
 ### ADR-014: A Starter in Front of the Downloaded App, With Retry
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-015
 - **Date:** 2026-10-13
 - **Amends:** ADR-008 (what the user double-clicks after download)
+- **Superseded by:** ADR-015
 
 #### Context
 
@@ -1184,6 +1179,58 @@ Rejected: an existing install would then update itself into the starter.
   `BrainRotDoctor.exe` (silent update).
 - A lock-harness test reproduces "Dll was not found" on the current app and
   requires the starter's retry before the Install window appears.
+
+### ADR-015: Retry the Install Window in the Product Exe
+
+- **Status:** Accepted
+- **Date:** 2026-10-14
+- **Supersedes:** ADR-014
+- **Amends:** ADR-008 (first start can retry)
+
+#### Context
+
+ADR-014 put a small starter in front of the app and packed the real exe onto
+the end of that file so the first double-click could retry. Company Defender
+flagged that shape as a dropper *before* the program ran — worse than the
+original "Dll was not found" race. The packed starter is withdrawn.
+
+The failure the user actually saw ("Dll was not found") happens after our code
+has started: the process is up, then showing the Install window needs Skia, and
+that load can fail if unpacked natives are not ready. A failed type initializer
+cannot be retried in the same process. Signing does not replace a retry.
+Unpacking is fine; unpack-then-run with no second try is not.
+
+#### Decision
+
+- **The download is again the real app** (`BrainRotDoctor.exe`). No second
+  program, no exe glued in a tail.
+- **If showing the UI fails because a native library was not found**, catch
+  that, wait, and start this same exe again. The user does not see the crash.
+  When it stays up, today's Install window appears.
+- **Not now / Install are unchanged.** After Install, starting from Programs
+  can retry too.
+- **Auto-update is unchanged.** One asset: the real app.
+
+#### Rejected Alternatives
+
+**Keep the packed starter**
+
+Rejected: Defender blocked it before execution on a company PC.
+
+**Retry Avalonia in the same process**
+
+Rejected: once Skia's type initializer has thrown, that process cannot use the
+type again.
+
+**Return to a first click with no retry**
+
+Rejected: that is the original bug.
+
+#### Consequences
+
+- Website and GitHub download are `BrainRotDoctor.exe` again.
+- A lock-harness test holds extracted natives briefly, then releases them; the
+  Install window must still appear.
 
 ## Contributing, License, and Security
 

@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using BrainRotDoctor.Starter;
 using Xunit;
 
 namespace BrainRotDoctor.App.Tests;
@@ -10,8 +9,8 @@ namespace BrainRotDoctor.App.Tests;
 /// <summary>
 /// Launches the published single-file exe the way a downloaded copy starts
 /// (not from Programs → Install window). The control launch has no
-/// interference. The lock test holds extracted natives only until the first
-/// start dies, then the starter retries — the real AV pattern.
+/// interference. The lock test holds extracted natives briefly, then releases
+/// them so the in-exe retry can show Install — the real AV pattern.
 /// </summary>
 [Collection("SingleFileLaunch")]
 public sealed class SingleFileExtractLockTests
@@ -41,12 +40,11 @@ public sealed class SingleFileExtractLockTests
                 "Control launch failed; the lock harness cannot be trusted. " + primed.Describe());
         }
 
-        using SingleFileLaunch locked = SingleFileLaunch.RunViaStarter(
-            _published.StarterExePath,
+        using SingleFileLaunch locked = SingleFileLaunch.Run(
             _published.ExePath,
             extract.Path,
             lockNatives: true,
-            releaseAfterFirstDeath: true);
+            releaseAfter: TimeSpan.FromMilliseconds(200));
 
         Assert.True(locked.SawInstallWindow, locked.Describe());
         return Task.CompletedTask;
@@ -74,51 +72,33 @@ internal sealed class ExtractDir : IDisposable
 }
 
 /// <summary>
-/// Starts the published exe (or the starter in front of it) with a private
-/// extract directory. Locks can be held for the whole launch or dropped after
-/// the first payload process dies so retry can succeed.
+/// Starts the published exe with a private extract directory. Optional exclusive
+/// locks on extracted natives can be dropped after a delay so a retry can succeed.
 /// </summary>
 internal sealed class SingleFileLaunch : IDisposable
 {
-    private readonly Process _process;
     private readonly string _payloadPath;
-    private readonly List<FileStream> _locks;
     private readonly StringBuilder _stderr;
 
     public bool SawInstallWindow { get; }
     public string? WindowTitle { get; }
 
-    private SingleFileLaunch(Process process, string payloadPath, List<FileStream> locks, StringBuilder stderr, bool saw, string? title)
+    private SingleFileLaunch(string payloadPath, StringBuilder stderr, bool saw, string? title)
     {
-        _process = process;
         _payloadPath = payloadPath;
-        _locks = locks;
         _stderr = stderr;
         SawInstallWindow = saw;
         WindowTitle = title;
     }
 
-    public static SingleFileLaunch Run(string exe, string extractBase) =>
-        Start(exe, exe, extractBase, lockNatives: false, releaseAfterFirstDeath: false, payloadEnv: false);
-
-    public static SingleFileLaunch RunViaStarter(
-        string starterExe,
-        string payloadExe,
-        string extractBase,
-        bool lockNatives,
-        bool releaseAfterFirstDeath) =>
-        Start(starterExe, payloadExe, extractBase, lockNatives, releaseAfterFirstDeath, payloadEnv: true);
-
-    private static SingleFileLaunch Start(
+    public static SingleFileLaunch Run(
         string exe,
-        string payloadPath,
         string extractBase,
-        bool lockNatives,
-        bool releaseAfterFirstDeath,
-        bool payloadEnv)
+        bool lockNatives = false,
+        TimeSpan? releaseAfter = null)
     {
         Directory.CreateDirectory(extractBase);
-        string payloadFull = System.IO.Path.GetFullPath(payloadPath);
+        string payloadFull = System.IO.Path.GetFullPath(exe);
         var locks = new List<FileStream>();
         if (lockNatives)
         {
@@ -144,10 +124,6 @@ internal sealed class SingleFileLaunch : IDisposable
             WorkingDirectory = System.IO.Path.GetDirectoryName(exe)!,
         };
         psi.Environment["DOTNET_BUNDLE_EXTRACT_BASE_DIR"] = extractBase;
-        if (payloadEnv)
-        {
-            psi.Environment[SetupPayload.PayloadEnvVar] = payloadFull;
-        }
 
         Process process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start " + exe);
@@ -166,85 +142,43 @@ internal sealed class SingleFileLaunch : IDisposable
         process.BeginErrorReadLine();
         process.BeginOutputReadLine();
 
-        var seenPayload = new HashSet<int>();
+        DateTime started = DateTime.UtcNow;
+        DateTime deadline = started.AddSeconds(40);
         bool saw = false;
         string? title = null;
-        DateTime deadline = DateTime.UtcNow.AddSeconds(40);
         while (DateTime.UtcNow < deadline)
         {
+            if (releaseAfter is { } delay && locks.Count > 0 && DateTime.UtcNow - started >= delay)
+            {
+                Release(locks);
+            }
+
             if (TryGetAppWindow(payloadFull, out title))
             {
                 saw = true;
                 break;
             }
 
-            HashSet<int> living = PayloadPids(payloadFull);
-            foreach (int id in living)
-            {
-                seenPayload.Add(id);
-            }
-
-            if (releaseAfterFirstDeath && locks.Count > 0 && seenPayload.Count > 0 && living.Count == 0)
-            {
-                Release(locks);
-            }
-
-            if (process.HasExited && living.Count == 0)
-            {
-                break;
-            }
-
             Thread.Sleep(50);
         }
 
-        if (!saw)
-        {
-            process.WaitForExit(2000);
-        }
-
-        return new SingleFileLaunch(process, payloadFull, locks, stderr, saw, title);
+        return new SingleFileLaunch(payloadFull, stderr, saw, title);
     }
 
     public string Describe()
     {
-        string code = _process.HasExited ? _process.ExitCode.ToString() : "running";
         string stderr;
         lock (_stderr)
         {
             stderr = _stderr.ToString();
         }
 
-        return "exited=" + _process.HasExited
-            + " code=" + code
-            + " title=" + (WindowTitle ?? "(none)")
-            + Environment.NewLine
-            + stderr;
+        return "title=" + (WindowTitle ?? "(none)") + Environment.NewLine + stderr;
     }
 
     public void Dispose()
     {
-        Release(_locks);
         KillPayload(_payloadPath);
-        try
-        {
-            if (!_process.HasExited)
-            {
-                _process.Kill(entireProcessTree: true);
-            }
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-        }
-
-        try
-        {
-            _process.WaitForExit(5000);
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-        }
-
-        _process.Dispose();
     }
 
     private static void Release(List<FileStream> locks)

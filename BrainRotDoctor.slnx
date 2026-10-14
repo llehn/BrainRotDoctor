@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/BrainRotDoctor.App/BrainRotDoctor.App.csproj" />
-    <Project Path="src/BrainRotDoctor.Starter/BrainRotDoctor.Starter.csproj" />
     <Project Path="src/BrainRotDoctor.Core/BrainRotDoctor.Core.csproj" />
     <Project Path="src/BrainRotDoctor.DesignSystem/BrainRotDoctor.DesignSystem.csproj" />
   </Folder>

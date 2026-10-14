@@ -9,7 +9,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <ProjectReference Include="..\..\src\BrainRotDoctor.App\BrainRotDoctor.App.csproj" />
-    <ProjectReference Include="..\..\src\BrainRotDoctor.Starter\BrainRotDoctor.Starter.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
