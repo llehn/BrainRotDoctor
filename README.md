@@ -84,13 +84,11 @@ placeholders. (Translations are machine-assisted; have a native speaker review
 before release.)
 
 It ships as a single self-contained **`BrainRotDoctor.exe`** that doubles as a
-one-click, no-admin installer (ADR-008, ADR-015): running the downloaded exe
-offers to install it per-user under `%LOCALAPPDATA%\Programs`, register autostart,
-and add an "Apps & features" entry. If native libraries are not ready yet on
-that first start, it waits and starts itself again so the Install window still
-appears. Uninstalling from Windows Settings runs the app's own code and
-**refuses while strict mode is active** — manual file deletion still works, but
-the easy three-click uninstall does not.
+one-click, no-admin installer (ADR-008): running the downloaded exe offers to
+install it per-user under `%LOCALAPPDATA%\Programs`, register autostart, and add
+an "Apps & features" entry. Uninstalling from Windows Settings runs the app's own
+code and **refuses while strict mode is active** — manual file deletion still
+works, but the easy three-click uninstall does not.
 
 ### Build and test
 
@@ -763,7 +761,7 @@ harsh black/white "dark" theme and a prominent theme switch.
 
 ### ADR-008: Per-User Self-Installer with Strict-Mode-Aware Uninstall
 
-- **Status:** Accepted; amended by ADR-015 (first-start retry lives in this exe)
+- **Status:** Accepted
 - **Date:** 2026-06-21
 
 #### Context
@@ -1119,118 +1117,6 @@ private window. The marker has to be per window.
 - Rules still apply in private windows; incognito is not an escape.
 - Time already counted from private visits before this change cannot be
   unpicked.
-
-### ADR-014: A Starter in Front of the Downloaded App, With Retry
-
-- **Status:** Superseded by ADR-015
-- **Date:** 2026-10-13
-- **Amends:** ADR-008 (what the user double-clicks after download)
-- **Superseded by:** ADR-015
-
-#### Context
-
-The published app is a .NET single-file exe. On start, the host unpacks native
-libraries into Windows Temp and loads them at once. If those files are not ready
-yet (antivirus commonly races that), the process dies with **Dll was not found**
-and the Install window never appears. A second click often works because the
-files are already there. That failure is not something the app can catch: by the
-time our window would show, the process is already gone. Signing does not replace
-a retry. Unpacking itself is fine; unpack-then-run with no second try is not.
-
-#### Decision
-
-- **A small starter is what the user downloads** (`BrainRotDoctor-Setup.exe`).
-  It is a C# Native AOT program in the same solution, so it starts without that
-  native-unpack race. It has no window of its own.
-- **The starter unpacks the real app and starts it, and retries** while that
-  start dies inside a short failure window. When the real app is actually
-  running, it shows today's Install window — the same window, not a simpler
-  stand-in.
-- **Not now / Install are unchanged.** Not now leaves nothing installed. Install
-  still copies the **real** app to Programs, Apps & features, and start with
-  Windows, then starts it from Programs (that start can retry too).
-- **Auto-update is unchanged.** Programs still holds the real app. The signed
-  `update.json` still names and hashes `BrainRotDoctor.exe`. Already-installed
-  people keep updating as they do now. The website file and the update file are
-  different jobs.
-
-#### Rejected Alternatives
-
-**Fix it inside today's exe**
-
-Rejected: the failure happens before the Install window exists. There is nothing
-of ours running that can retry that first click.
-
-**A cheaper Windows dialog in the starter**
-
-Rejected: the first thing the user sees must be the current Install window.
-
-**A native C stub and a second compiler**
-
-Rejected: this repo is C# / `dotnet`. Native AOT is still that toolchain.
-
-**Make the download and the update asset the same file**
-
-Rejected: an existing install would then update itself into the starter.
-
-#### Consequences
-
-- Releases publish both `BrainRotDoctor-Setup.exe` (website) and
-  `BrainRotDoctor.exe` (silent update).
-- A lock-harness test reproduces "Dll was not found" on the current app and
-  requires the starter's retry before the Install window appears.
-
-### ADR-015: Retry the Install Window in the Product Exe
-
-- **Status:** Accepted
-- **Date:** 2026-10-14
-- **Supersedes:** ADR-014
-- **Amends:** ADR-008 (first start can retry)
-
-#### Context
-
-ADR-014 put a small starter in front of the app and packed the real exe onto
-the end of that file so the first double-click could retry. Company Defender
-flagged that shape as a dropper *before* the program ran — worse than the
-original "Dll was not found" race. The packed starter is withdrawn.
-
-The failure the user actually saw ("Dll was not found") happens after our code
-has started: the process is up, then showing the Install window needs Skia, and
-that load can fail if unpacked natives are not ready. A failed type initializer
-cannot be retried in the same process. Signing does not replace a retry.
-Unpacking is fine; unpack-then-run with no second try is not.
-
-#### Decision
-
-- **The download is again the real app** (`BrainRotDoctor.exe`). No second
-  program, no exe glued in a tail.
-- **If showing the UI fails because a native library was not found**, catch
-  that, wait, and start this same exe again. The user does not see the crash.
-  When it stays up, today's Install window appears.
-- **Not now / Install are unchanged.** After Install, starting from Programs
-  can retry too.
-- **Auto-update is unchanged.** One asset: the real app.
-
-#### Rejected Alternatives
-
-**Keep the packed starter**
-
-Rejected: Defender blocked it before execution on a company PC.
-
-**Retry Avalonia in the same process**
-
-Rejected: once Skia's type initializer has thrown, that process cannot use the
-type again.
-
-**Return to a first click with no retry**
-
-Rejected: that is the original bug.
-
-#### Consequences
-
-- Website and GitHub download are `BrainRotDoctor.exe` again.
-- A lock-harness test holds extracted natives briefly, then releases them; the
-  Install window must still appear.
 
 ## Contributing, License, and Security
 

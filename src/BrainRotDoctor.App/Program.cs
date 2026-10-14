@@ -80,7 +80,8 @@ internal static class Program
             bool launchNow = SelfInstall.Run(installOptions, new DetachedApplyLauncher());
             if (launchNow && !HasFlag(args, "--no-launch"))
             {
-                ProcessLaunchRetry.Start(installer.InstalledExePath);
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(installer.InstalledExePath) { UseShellExecute = true });
             }
 
             return;
@@ -90,7 +91,7 @@ internal static class Program
         if (!Installer.IsRunningFrom(installer.InstalledExePath, currentExe)
             && !HasFlag(args, "--no-install-prompt"))
         {
-            UiStartRetry.Run(() => BuildInstallerApp(installOptions), args);
+            BuildInstallerApp(installOptions).StartWithClassicDesktopLifetime(args);
             return;
         }
 
@@ -140,7 +141,7 @@ internal static class Program
         controller.Start();
         try
         {
-            UiStartRetry.Run(() => BuildAvaloniaApp(controller, uiSettings), args);
+            BuildAvaloniaApp(controller, uiSettings).StartWithClassicDesktopLifetime(args);
         }
         finally
         {
