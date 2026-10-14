@@ -9,8 +9,9 @@ namespace BrainRotDoctor.App.Tests;
 /// <summary>
 /// Launches the published single-file exe the way a downloaded copy starts
 /// (not from Programs → Install window). The control launch has no
-/// interference. The lock test holds extracted natives briefly, then releases
-/// them so the in-exe retry can show Install — the real AV pattern.
+/// interference. The lock test holds extracted natives for five seconds
+/// (a slow, loaded machine), then releases them so retry must survive that
+/// wait and still show Install.
 /// </summary>
 [Collection("SingleFileLaunch")]
 public sealed class SingleFileExtractLockTests
@@ -19,7 +20,7 @@ public sealed class SingleFileExtractLockTests
 
     public SingleFileExtractLockTests(PublishedSingleFileFixture published) => _published = published;
 
-    [Fact(Timeout = 120000)]
+    [Fact(Timeout = 30000)]
     public Task Without_locking_extracted_natives_the_install_window_appears()
     {
         using var extract = new ExtractDir();
@@ -29,7 +30,7 @@ public sealed class SingleFileExtractLockTests
         return Task.CompletedTask;
     }
 
-    [Fact(Timeout = 180000)]
+    [Fact(Timeout = 60000)]
     public Task With_extracted_natives_locked_the_install_window_still_appears()
     {
         using var extract = new ExtractDir();
@@ -44,7 +45,7 @@ public sealed class SingleFileExtractLockTests
             _published.ExePath,
             extract.Path,
             lockNatives: true,
-            releaseAfter: TimeSpan.FromMilliseconds(200));
+            releaseAfter: TimeSpan.FromSeconds(5));
 
         Assert.True(locked.SawInstallWindow, locked.Describe());
         return Task.CompletedTask;
@@ -143,7 +144,7 @@ internal sealed class SingleFileLaunch : IDisposable
         process.BeginOutputReadLine();
 
         DateTime started = DateTime.UtcNow;
-        DateTime deadline = started.AddSeconds(40);
+        DateTime deadline = started.AddSeconds(20);
         bool saw = false;
         string? title = null;
         while (DateTime.UtcNow < deadline)
