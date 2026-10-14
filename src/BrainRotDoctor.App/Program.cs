@@ -91,6 +91,7 @@ internal static class Program
         if (!Installer.IsRunningFrom(installer.InstalledExePath, currentExe)
             && !HasFlag(args, "--no-install-prompt"))
         {
+            NativeLibraryReady.Wait();
             BuildInstallerApp(installOptions).StartWithClassicDesktopLifetime(args);
             return;
         }
@@ -138,6 +139,7 @@ internal static class Program
             TryGetOption(args, "--log", "-l"));
         controller.SetUntrackedSites(uiSettings.LoadUntrackedSites());
 
+        NativeLibraryReady.Wait();
         controller.Start();
         try
         {

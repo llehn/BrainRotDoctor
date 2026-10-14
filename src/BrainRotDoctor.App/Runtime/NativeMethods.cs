@@ -129,4 +129,9 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+
+    public const uint LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008;
+
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial IntPtr LoadLibraryExW(string lpLibFileName, IntPtr hFile, uint dwFlags);
 }
