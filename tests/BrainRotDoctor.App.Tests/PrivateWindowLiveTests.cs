@@ -29,6 +29,31 @@ public sealed class PrivateWindowLiveTests
             return;
         }
 
+        // A browser on a build machine now and then never shows its window. That
+        // says nothing about the observer, so launch once more before failing; a
+        // window that is seen but marked wrong still fails at once.
+        var misses = new List<string>();
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            bool? markedPrivate = LaunchAndObserve(exe, processName, isPrivate, out string diagnosis);
+            if (markedPrivate is not null)
+            {
+                Assert.Equal(isPrivate, markedPrivate);
+                return;
+            }
+
+            misses.Add("attempt " + attempt + ": " + diagnosis);
+        }
+
+        Assert.Fail(processName + (isPrivate ? " private" : " ordinary") + " window was not seen" + Environment.NewLine + string.Join(Environment.NewLine, misses));
+    }
+
+    /// <summary>
+    /// Starts the browser and returns whether its window was marked private, or
+    /// null when no window of ours was seen; then says what the browser was doing.
+    /// </summary>
+    private static bool? LaunchAndObserve(string exe, string processName, bool isPrivate, out string diagnosis)
+    {
         string profile = Path.Combine(Path.GetTempPath(), "brd-live-private", processName + (isPrivate ? "-priv" : "-norm") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
         PrepareFirefoxProfile(processName, profile);
@@ -42,8 +67,8 @@ public sealed class PrivateWindowLiveTests
 
             var observer = new UiAutomationBrowserObserver();
             window = WaitForWindow(observer, processName, startedAt, isPrivate, TimeSpan.FromSeconds(30));
-            Assert.True(window is not null, processName + (isPrivate ? " private" : " ordinary") + " window was not seen");
-            Assert.Equal(isPrivate, window!.IsPrivate);
+            diagnosis = window is null ? Describe(processName, launched, startedAt) : string.Empty;
+            return window?.IsPrivate;
         }
         finally
         {
@@ -57,6 +82,45 @@ public sealed class PrivateWindowLiveTests
             {
             }
         }
+    }
+
+    private static string Describe(string processName, Process launched, DateTime startedAt)
+    {
+        launched.Refresh();
+        string state = launched.HasExited ? "launched process exited with " + launched.ExitCode : "launched process still running";
+        var visible = new List<string>();
+        int hidden = 0;
+        NativeMethods.EnumWindows((hWnd, lParam) =>
+        {
+            NativeMethods.GetWindowThreadProcessId(hWnd, out uint pid);
+            try
+            {
+                using Process process = Process.GetProcessById((int)pid);
+                if (!process.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (!NativeMethods.IsWindowVisible(hWnd))
+                {
+                    hidden++;
+                    return true;
+                }
+
+                double age = (process.StartTime.ToUniversalTime() - startedAt.ToUniversalTime()).TotalSeconds;
+                visible.Add($"pid {pid} started {age:0.0}s after launch, minimized={NativeMethods.IsIconic(hWnd)}, on screen={NativeMethods.IsOnScreen(hWnd)}, title='{NativeMethods.GetWindowTitle(hWnd)}'");
+            }
+            catch (ArgumentException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return state + "; " + hidden + " hidden windows; visible: " + (visible.Count == 0 ? "none" : string.Join(" | ", visible));
     }
 
     private static ObservedBrowserWindow? WaitForWindow(
