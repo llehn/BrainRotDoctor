@@ -18,7 +18,8 @@ internal sealed class UpdateService : IDisposable
     public const string SignatureAssetName = "update.json.sig";
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(1);
+    public static readonly TimeSpan CheckInterval = TimeSpan.FromHours(12);
+    public static readonly TimeSpan FrequentCheckInterval = TimeSpan.FromMinutes(1);
 
     private readonly IReleaseSource _source;
     private readonly UpdateSignature _signature;
@@ -67,13 +68,21 @@ internal sealed class UpdateService : IDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 await CheckOnceAsync(cancellationToken).ConfigureAwait(false);
-                await Task.Delay(CheckInterval, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(NextCheckDelay(), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
         }
     }
+
+    /// <summary>
+    /// Twice a day normally; every minute while the developer opt-in file
+    /// (<see cref="UpdatePaths.FrequentChecksFlagPath"/>) exists. Re-read each
+    /// cycle, so removing the file returns to the normal pace after one more check.
+    /// </summary>
+    public TimeSpan NextCheckDelay() =>
+        File.Exists(_paths.FrequentChecksFlagPath) ? FrequentCheckInterval : CheckInterval;
 
     /// <summary>
     /// One check cycle. Returns true if a verified newer build was staged and the

@@ -139,8 +139,8 @@ BrainRotDoctor.exe --dump-icon src\BrainRotDoctor.App\Assets\BrainRotDoctor.ico
 
 ### Releases and silent auto-update
 
-Installed builds update themselves silently (ADR-009). Every few hours the app
-checks the latest [GitHub Release](https://github.com/llehn/BrainRotDoctor/releases),
+Installed builds update themselves silently (ADR-009). Shortly after startup and
+then twice a day the app checks the latest [GitHub Release](https://github.com/llehn/BrainRotDoctor/releases),
 verifies a signed `update.json` manifest and the new exe's SHA-256, and — only for
 a strictly newer version (never a downgrade or reinstall) — stages the binary and
 swaps it in, coordinating with the watchdog so the new build takes over without a
@@ -150,9 +150,15 @@ window. There is no update UI by design; applied versions are recorded to
 Releases are continuous: every push to `master` is tested, and if green, built,
 signed, and published automatically (version `1.0.<commit-count>`, always
 increasing). A failing test means no release. There is nothing to tag or click —
-push to `master` and installed apps update themselves within hours. See
+push to `master` and installed apps update themselves within a day. See
 [tools/release/README.md](tools/release/README.md) for the one-time signing-key
 setup.
+
+Developers and testers who want a new release on their machine right away can
+opt in to checking every minute by creating an empty file named
+`check-frequently` in `%LOCALAPPDATA%\BrainRotDoctor\update\`; delete it to go
+back to twice a day. It changes only how often the app asks — every build is
+still signature- and hash-verified.
 
 To produce the single-file distributable locally (one downloadable exe, no runtime
 needed on the target):
@@ -847,8 +853,11 @@ bypass), and the existing watchdog (ADR-008 lineage) respawns the primary within
   build only if the signature verifies and the downloaded exe's SHA-256 matches
   the signed manifest. Updates are **forward-only** (strictly greater version),
   blocking downgrade/replay.
-- **Completely silent, always on.** A background timer checks every few hours;
-  failures are swallowed and retried. Updates apply even during strict mode
+- **Completely silent, always on.** A background timer checks shortly after
+  startup and then twice a day; failures are swallowed and retried. A local
+  opt-in file (`update\check-frequently`) raises this to every minute for
+  developers testing releases; it affects only the check frequency, not
+  verification. Updates apply even during strict mode
   (they are forward fixes, not a user escape). No user-facing UI; applied
   versions are logged locally for a possible future "what's new" view.
 - **Watchdog-aware swap with recovery.** The verified binary is staged, then runs

@@ -17,6 +17,7 @@ internal sealed class UpdatePaths
         StagedExePath = Path.Combine(StagedDir, Path.GetFileName(installedExePath));
         MarkerPath = Path.Combine(UpdateDir, "pending.json");
         HistoryLogPath = Path.Combine(UpdateDir, "history.log");
+        FrequentChecksFlagPath = Path.Combine(UpdateDir, "check-frequently");
     }
 
     /// <summary>%LOCALAPPDATA%\BrainRotDoctor</summary>
@@ -36,6 +37,14 @@ internal sealed class UpdatePaths
 
     /// <summary>Append-only record of applied updates (for a future "what's new" view).</summary>
     public string HistoryLogPath { get; }
+
+    /// <summary>
+    /// Opt-in for developers and testers: while a file exists here (any content),
+    /// the updater checks every minute instead of twice a day, so a fresh release
+    /// arrives almost immediately. It changes only how often the app asks, never
+    /// what it accepts — every build is still signature- and hash-verified.
+    /// </summary>
+    public string FrequentChecksFlagPath { get; }
 
     public static UpdatePaths ForCurrentProcess(string installedExePath)
     {

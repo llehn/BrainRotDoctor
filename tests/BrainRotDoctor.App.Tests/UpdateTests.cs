@@ -148,6 +148,20 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void Checks_run_twice_a_day_unless_the_frequent_checks_file_exists()
+    {
+        var service = new UpdateService(BuildSource("1.0.0", RandomBytes(64)), _signature, _paths, new FakeLauncher(), new Version(1, 0, 0));
+        Assert.Equal(TimeSpan.FromHours(12), service.NextCheckDelay());
+
+        Directory.CreateDirectory(_paths.UpdateDir);
+        File.WriteAllText(_paths.FrequentChecksFlagPath, "");
+        Assert.Equal(TimeSpan.FromMinutes(1), service.NextCheckDelay());
+
+        File.Delete(_paths.FrequentChecksFlagPath);
+        Assert.Equal(TimeSpan.FromHours(12), service.NextCheckDelay());
+    }
+
+    [Fact]
     public async Task The_same_version_is_not_applied()
     {
         var source = BuildSource("1.0.0", RandomBytes(64));
