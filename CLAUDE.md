@@ -35,3 +35,14 @@ default to the top two when talking to me.
   noise.
 - When I want code detail, I'll say so explicitly. Then, and only then, go to
   layer 3.
+
+## Done means deployed
+
+- **"Implement" means implement, commit, push, and deploy.** When I say
+  "implement it", "let's do this", or hand you a task to do, the work is not
+  done until it is live. Doing → done. Don't stop at changed files and ask
+  whether to commit or push — that is part of the job.
+- **A push is not done until its release is.** After every push to `master`,
+  watch that commit's Release run to the end. If it fails, find out why, fix
+  it or re-run it, and watch again until the release is published. Then tell
+  me it's deployed.

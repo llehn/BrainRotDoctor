@@ -154,6 +154,11 @@ push to `master` and installed apps update themselves within a day. See
 [tools/release/README.md](tools/release/README.md) for the one-time signing-key
 setup.
 
+**A push is not done until its release is.** Pushing to `master` means pushing
+*and* watching that commit's Release run to the end (`gh run watch`). If it
+fails, find out why, fix it or re-run it, and watch again until the release is
+published. Never leave a push with an unknown or failed release behind.
+
 Developers and testers who want a new release on their machine right away can
 opt in to checking every minute by creating an empty file named
 `check-frequently` in `%LOCALAPPDATA%\BrainRotDoctor\update\`; delete it to go
