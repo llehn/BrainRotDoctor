@@ -30,10 +30,11 @@ public sealed class PrivateWindowLiveTests
         }
 
         // A browser on a build machine now and then never shows its window. That
-        // says nothing about the observer, so launch once more before failing; a
-        // window that is seen but marked wrong still fails at once.
+        // says nothing about the observer, so kill everything the launch started
+        // and launch again; ten misses in a row is no flake. A window that is seen
+        // but marked wrong still fails at once.
         var misses = new List<string>();
-        for (int attempt = 1; attempt <= 2; attempt++)
+        for (int attempt = 1; attempt <= 10; attempt++)
         {
             bool? markedPrivate = LaunchAndObserve(exe, processName, isPrivate, out string diagnosis);
             if (markedPrivate is not null)
@@ -73,6 +74,7 @@ public sealed class PrivateWindowLiveTests
         finally
         {
             CloseOurs(window, launched);
+            KillStartedSince(processName, startedAt);
             launched?.Dispose();
             try
             {
@@ -266,6 +268,35 @@ public sealed class PrivateWindowLiveTests
         }
         catch (InvalidOperationException)
         {
+        }
+    }
+
+    /// <summary>
+    /// Kills every browser process this launch started, so a stuck one can't hold
+    /// up the next attempt. A browser the user already had open started earlier
+    /// and is left alone.
+    /// </summary>
+    private static void KillStartedSince(string processName, DateTime startedAt)
+    {
+        foreach (Process process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.StartTime.ToUniversalTime() >= startedAt.ToUniversalTime())
+                    {
+                        process.Kill(entireProcessTree: true);
+                        process.WaitForExit(5000);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                }
+            }
         }
     }
 
