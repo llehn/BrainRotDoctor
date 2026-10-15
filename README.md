@@ -968,10 +968,12 @@ Live tests on Firefox, Chrome, and Edge with background windows showed:
 - **Primary:** post Ctrl+W directly to the target browser window while its thread
   sees Ctrl as held. Ctrl is held only until the window reacts (title change or
   window closed), capped at 250 ms, and only the faked bits are released.
-- **Fallback:** if a keyboard attempt showed no effect and the same window still
-  shows a blocked page on the next check, press the selected tab's close button
-  via UI Automation (matched by class, not localized name) and immediately hand
-  focus back to the window the user was using.
+- **Fallback:** every attempt is confirmed. If the same tab (same title and same
+  tab element) is still selected ~0.8 s later, press the selected tab's close
+  button via UI Automation (matched by class, not localized name) and immediately
+  hand focus back to the window the user was using. Up to four quick attempts run
+  within the one close, so the worm scene plays once; the attempts stop as soon as
+  the window is hidden or the user switches tabs.
 - No global keystrokes are ever sent, so nothing can land in another app.
 
 #### Rejected Alternatives
