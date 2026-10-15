@@ -14,13 +14,15 @@ internal sealed class App : Application
 {
     private readonly EnforcementController _controller;
     private readonly UiSettingsStore _settings;
+    private readonly bool _startInTray;
     private readonly WormScene _scene = new(new ExtractionScript());
     private MainWindow? _window;
 
-    public App(EnforcementController controller, UiSettingsStore settings)
+    public App(EnforcementController controller, UiSettingsStore settings, bool startInTray)
     {
         _controller = controller;
         _settings = settings;
+        _startInTray = startInTray;
     }
 
     public override void Initialize()
@@ -54,7 +56,14 @@ internal sealed class App : Application
             tray.Menu = menu;
             tray.Clicked += (_, _) => _window.ShowFromTray();
 
-            desktop.MainWindow = _window;
+            // The lifetime shows its main window on start, so a tray start leaves it unset.
+            if (!_startInTray)
+            {
+                desktop.MainWindow = _window;
+            }
+
+            IDisposable showListener = ShowWindowSignal.Listen(() => Dispatcher.UIThread.Post(() => _window.ShowFromTray()));
+            desktop.Exit += (_, _) => showListener.Dispose();
 
             // Build the scene's drawings and its sound while idle, so the first block plays without a hitch.
             Dispatcher.UIThread.Post(

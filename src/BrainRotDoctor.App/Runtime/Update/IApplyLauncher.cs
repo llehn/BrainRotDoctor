@@ -43,6 +43,9 @@ internal sealed class ApplyInfo
     public string Version { get; init; } = "";
     public string Sha256 { get; init; } = "";
 
+    /// <summary>Whether the relaunched app shows its window: yes after the user ran the installer, no after a silent update.</summary>
+    public bool ShowWindow { get; init; }
+
     public static string FileName => "apply-info.json";
 
     public string FilePath(UpdatePaths paths) => Path.Combine(paths.StagedDir, FileName);

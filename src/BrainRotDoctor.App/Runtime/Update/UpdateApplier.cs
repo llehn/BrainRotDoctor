@@ -62,12 +62,12 @@ internal static class UpdateApplier
         {
             RollBack(target, backup);
             standdown.DeleteMarker();
-            Relaunch(target);
+            Relaunch(target, info.ShowWindow);
             return;
         }
 
         standdown.DeleteMarker();
-        Relaunch(target);
+        Relaunch(target, info.ShowWindow);
         TryDelete(backup);
     }
 
@@ -197,7 +197,7 @@ internal static class UpdateApplier
         }
     }
 
-    private static void Relaunch(string target)
+    private static void Relaunch(string target, bool showWindow)
     {
         var info = new ProcessStartInfo
         {
@@ -211,6 +211,11 @@ internal static class UpdateApplier
         info.ArgumentList.Add("start");
         info.ArgumentList.Add("");
         info.ArgumentList.Add(target);
+        if (!showWindow)
+        {
+            info.ArgumentList.Add(Program.TrayFlag);
+        }
+
         try
         {
             Process.Start(info);

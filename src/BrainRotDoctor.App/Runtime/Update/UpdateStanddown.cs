@@ -124,7 +124,7 @@ internal sealed class UpdateStanddown
             $"ping 127.0.0.1 -n {delaySeconds + 1} >nul\r\n" +
             $"tasklist /fi \"imagename eq {processName}.exe\" | find /i \"{processName}.exe\" >nul\r\n" +
             "if %errorlevel%==0 goto done\r\n" +
-            $"if exist \"{exe}\" start \"\" \"{exe}\"\r\n" +
+            $"if exist \"{exe}\" start \"\" \"{exe}\" {Program.TrayFlag}\r\n" +
             ":done\r\n" +
             "del \"%~f0\" >nul 2>nul\r\n";
 

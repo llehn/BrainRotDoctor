@@ -181,7 +181,10 @@ The resulting `publish\BrainRotDoctor.exe` is what a user downloads and
 double-clicks. It self-installs (`--install`), and the registered uninstall runs
 `--uninstall` (which refuses during strict mode).
 
-Closing the window leaves enforcement running in the tray. The UI is navigation,
+Closing the window leaves enforcement running in the tray. A launch nobody asked
+to see — at Windows sign-in, a watchdog revival, a silent update — starts in the
+tray with no window; opening the app yourself, or running the installer, shows
+it (a second launch brings the running instance's window up). The UI is navigation,
 not a single dense screen: **Home** is a grid of rule cards (each showing its
 condition summary, sites, and live status); clicking a card opens a **focused
 edit screen** for just that rule (the grid is replaced, not crowded alongside).

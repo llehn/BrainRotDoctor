@@ -62,6 +62,7 @@ internal static class SelfInstall
         {
             Version = version,
             Sha256 = UpdateSignature.ComputeFileSha256(paths.StagedExePath),
+            ShowWindow = true,
         };
         File.WriteAllText(info.FilePath(paths), JsonSerializer.Serialize(info));
     }

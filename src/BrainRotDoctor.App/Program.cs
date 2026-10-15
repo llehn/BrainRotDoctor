@@ -10,6 +10,9 @@ namespace BrainRotDoctor.App;
 
 internal static class Program
 {
+    /// <summary>Starts the app in the tray, with no window.</summary>
+    internal const string TrayFlag = "--tray";
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -96,10 +99,21 @@ internal static class Program
             return;
         }
 
+        // Launches nobody asked to see (sign-in, a watchdog revival, an update
+        // relaunch) start in the tray; one the user opened shows the window.
+        bool startInTray = HasFlag(args, StartupRegistrar.StartupFlag)
+            || HasFlag(args, TrayFlag)
+            || HasOption(args, "--role", "primary");
+
         using var mutex = ProcessProtector.AcquirePrimary(out bool ownsMutex);
         if (!ownsMutex)
         {
-            // Another primary instance already owns the UI; nothing to do.
+            // Another primary instance already owns the UI; bring its window up.
+            if (!startInTray)
+            {
+                ShowWindowSignal.Raise();
+            }
+
             return;
         }
 
@@ -143,7 +157,7 @@ internal static class Program
         controller.Start();
         try
         {
-            BuildAvaloniaApp(controller, uiSettings).StartWithClassicDesktopLifetime(args);
+            BuildAvaloniaApp(controller, uiSettings, startInTray).StartWithClassicDesktopLifetime(args);
         }
         finally
         {
@@ -151,8 +165,8 @@ internal static class Program
         }
     }
 
-    private static AppBuilder BuildAvaloniaApp(EnforcementController controller, UiSettingsStore uiSettings) =>
-        AppBuilder.Configure(() => new BrainRotDoctor.App.Ui.App(controller, uiSettings))
+    private static AppBuilder BuildAvaloniaApp(EnforcementController controller, UiSettingsStore uiSettings, bool startInTray) =>
+        AppBuilder.Configure(() => new BrainRotDoctor.App.Ui.App(controller, uiSettings, startInTray))
             .UsePlatformDetect()
             .UseDesignSystem()
             .LogToTrace();
