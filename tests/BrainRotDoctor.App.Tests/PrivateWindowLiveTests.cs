@@ -66,7 +66,7 @@ public sealed class PrivateWindowLiveTests
             Assert.NotNull(launched);
 
             var observer = new UiAutomationBrowserObserver();
-            window = WaitForWindow(observer, processName, startedAt, isPrivate, TimeSpan.FromSeconds(30));
+            window = WaitForWindow(observer, processName, startedAt, isPrivate, TimeSpan.FromSeconds(10));
             diagnosis = window is null ? Describe(processName, launched, startedAt) : string.Empty;
             return window?.IsPrivate;
         }
