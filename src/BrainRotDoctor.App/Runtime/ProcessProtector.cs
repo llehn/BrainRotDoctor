@@ -9,13 +9,6 @@ internal sealed class ProcessProtector : IDisposable
     private const string WatchdogMutexName = "Local\\BrainRotDoctor.Watchdog";
     private static readonly TimeSpan WatchInterval = TimeSpan.FromMilliseconds(650);
 
-    // A frozen partner still holds its mutex, so EnsureProcess treats it as on duty
-    // and will not start a replacement. Wake it directly. Waking a running partner
-    // does nothing.
-    private static readonly TimeSpan ThawInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly int EnsureEvery = (int)(WatchInterval.TotalMilliseconds / ThawInterval.TotalMilliseconds);
-    private static readonly string CurrentProcessName = Process.GetCurrentProcess().ProcessName;
-
     private readonly CancellationTokenSource _stop = new();
 
     private ProcessProtector()
@@ -34,7 +27,6 @@ internal sealed class ProcessProtector : IDisposable
         }
 
         var standdown = UpdateStanddown.ForCurrentProcess();
-        var tick = 0;
         while (true)
         {
             // A verified update is replacing the installed exe: stand down so the
@@ -44,14 +36,8 @@ internal sealed class ProcessProtector : IDisposable
                 return;
             }
 
-            ThawSiblings();
-            if (tick % EnsureEvery == 0)
-            {
-                EnsureProcess(PrimaryMutexName, "--role", "primary");
-            }
-
-            tick++;
-            Thread.Sleep(ThawInterval);
+            EnsureProcess(PrimaryMutexName, "--role", "primary");
+            Thread.Sleep(WatchInterval);
         }
     }
 
@@ -78,7 +64,6 @@ internal sealed class ProcessProtector : IDisposable
     private void RunPrimaryMonitor()
     {
         var standdown = UpdateStanddown.ForCurrentProcess();
-        var tick = 0;
         while (!_stop.IsCancellationRequested)
         {
             // A verified update needs this process to release the installed exe.
@@ -90,73 +75,8 @@ internal sealed class ProcessProtector : IDisposable
                 Environment.Exit(0);
             }
 
-            ThawSiblings();
-            if (tick % EnsureEvery == 0)
-            {
-                EnsureProcess(WatchdogMutexName, "--role", "watchdog");
-            }
-
-            tick++;
-            if (_stop.Token.WaitHandle.WaitOne(ThawInterval))
-            {
-                return;
-            }
-        }
-    }
-
-    /// <summary>Wakes every other instance of this executable. A running instance is left alone.</summary>
-    internal static void ThawSiblings()
-    {
-        Process[] processes;
-        try
-        {
-            processes = Process.GetProcessesByName(CurrentProcessName);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            return;
-        }
-
-        foreach (Process process in processes)
-        {
-            try
-            {
-                if (process.Id != Environment.ProcessId)
-                {
-                    ThawProcess(process.Id);
-                }
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Undoes a process-wide freeze. Does nothing if the process is already running or gone.</summary>
-    internal static void ThawProcess(int processId)
-    {
-        if (processId <= 0 || processId == Environment.ProcessId)
-        {
-            return;
-        }
-
-        IntPtr handle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
-        if (handle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        try
-        {
-            NativeMethods.NtResumeProcess(handle);
-        }
-        finally
-        {
-            NativeMethods.CloseHandle(handle);
+            EnsureProcess(WatchdogMutexName, "--role", "watchdog");
+            _stop.Token.WaitHandle.WaitOne(WatchInterval);
         }
     }
 

@@ -134,23 +134,4 @@ internal static partial class NativeMethods
 
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     public static partial IntPtr LoadLibraryExW(string lpLibFileName, IntPtr hFile, uint dwFlags);
-
-    /// <summary>Enough to undo a process-wide freeze. Not enough to read or write memory.</summary>
-    public const uint PROCESS_SUSPEND_RESUME = 0x0800;
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    public static partial IntPtr OpenProcess(
-        uint dwDesiredAccess,
-        [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle,
-        uint dwProcessId);
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool CloseHandle(IntPtr hObject);
-
-    /// <summary>
-    /// Undoes a process-wide freeze. A no-op when the process is already running.
-    /// </summary>
-    [LibraryImport("ntdll.dll")]
-    public static partial int NtResumeProcess(IntPtr processHandle);
 }

@@ -71,8 +71,8 @@ the config file during strict mode is undone at the next start. Off is shown
 as needing attention (amber); on is calm.
 
 The app starts with paired primary/watchdog roles by default. If either role is
-killed, the other restarts it. If either role is frozen, the other wakes it.
-Normal startup also registers the app in the current user's Windows Run key.
+killed, the other restarts it. Normal startup also registers the app in the
+current user's Windows Run key.
 
 The UI is **localized into 31 languages** (the 24 official EU languages plus
 Russian, Ukrainian, Bosnian, Serbian (Cyrillic), Norwegian Bokmål, Turkish, and
@@ -1136,37 +1136,6 @@ private window. The marker has to be per window.
 - Rules still apply in private windows; incognito is not an escape.
 - Time already counted from private visits before this change cannot be
   unpicked.
-
-### ADR-014: A Frozen Partner Is Woken
-
-- **Status:** Accepted
-- **Date:** 2026-10-19
-
-#### Context
-
-The two roles only noticed a partner that had exited. A frozen partner still
-holds its lock, so the other role treats it as on duty and does nothing. That
-has been used to stop both.
-
-#### Decision
-
-Each role wakes a frozen partner directly, on a cadence a person cannot beat by
-clicking the second role. Waking a partner that is already running does nothing.
-A partner that has actually exited is still replaced on the existing cadence.
-
-#### Rejected Alternatives
-
-**Another copy of the same watchdog**
-
-Rejected. The hole is that a freeze does not look like an exit, not that there
-are only two roles. Freezing every running copy still leaves nobody awake.
-
-#### Consequences
-
-- Freezing one role does not open a quiet window in which the other can be
-  frozen and both ended.
-- A running partner is unaffected by the wake.
-- Respawn after a real exit is unchanged.
 
 ## Contributing, License, and Security
 
