@@ -7,12 +7,23 @@ internal sealed class ProcessProtector : IDisposable
 {
     private const string PrimaryMutexName = "Local\\BrainRotDoctor.Primary";
     private const string WatchdogMutexName = "Local\\BrainRotDoctor.Watchdog";
-    private static readonly TimeSpan WatchInterval = TimeSpan.FromMilliseconds(650);
+    private const string PrimaryStartingMutexName = "Local\\BrainRotDoctor.Primary.Starting";
+    private const string WatchdogStartingMutexName = "Local\\BrainRotDoctor.Watchdog.Starting";
+
+    internal static readonly TimeSpan CheckInterval = TimeSpan.FromMilliseconds(50);
+
+    // A single-file launch can sit in extraction for a while. Hold the start
+    // guard long enough that a slow launch is not mistaken for a failed one.
+    private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(30);
+
+    private static readonly string CurrentProcessName = Process.GetCurrentProcess().ProcessName;
 
     private readonly CancellationTokenSource _stop = new();
+    private readonly PartnerWatch _watch;
 
-    private ProcessProtector()
+    private ProcessProtector(string roleMutexName, string startMutexName, string[] startArgs)
     {
+        _watch = new PartnerWatch(roleMutexName, startMutexName, StartTimeout, () => StartSibling(startArgs), ThawSiblings);
     }
 
     public static Mutex AcquirePrimary(out bool ownsMutex) =>
@@ -26,6 +37,7 @@ internal sealed class ProcessProtector : IDisposable
             return;
         }
 
+        using var protector = new ProcessProtector(PrimaryMutexName, PrimaryStartingMutexName, ["--role", "primary"]);
         var standdown = UpdateStanddown.ForCurrentProcess();
         while (true)
         {
@@ -33,19 +45,18 @@ internal sealed class ProcessProtector : IDisposable
             // file unlocks. The departing primary schedules the recovery relaunch.
             if (standdown.IsActive())
             {
+                protector._watch.ReleaseStart();
                 return;
             }
 
-            EnsureProcess(PrimaryMutexName, "--role", "primary");
-            Thread.Sleep(WatchInterval);
+            protector._watch.Tick(DateTimeOffset.UtcNow);
+            Thread.Sleep(CheckInterval);
         }
     }
 
     public static ProcessProtector StartForPrimary(string[] args)
     {
-        EnsureProcess(WatchdogMutexName, "--role", "watchdog");
-
-        var protector = new ProcessProtector();
+        var protector = new ProcessProtector(WatchdogMutexName, WatchdogStartingMutexName, ["--role", "watchdog"]);
         var thread = new Thread(() => protector.RunPrimaryMonitor())
         {
             IsBackground = true,
@@ -64,32 +75,87 @@ internal sealed class ProcessProtector : IDisposable
     private void RunPrimaryMonitor()
     {
         var standdown = UpdateStanddown.ForCurrentProcess();
-        while (!_stop.IsCancellationRequested)
+        try
         {
-            // A verified update needs this process to release the installed exe.
-            // Schedule a safety-net relaunch (in case the swap stalls) and exit so
-            // the applier can overwrite the binary; the new build then takes over.
-            if (standdown.IsActive())
+            while (!_stop.IsCancellationRequested)
             {
-                standdown.ScheduleSafetyNetRelaunch();
-                Environment.Exit(0);
-            }
+                // A verified update needs this process to release the installed exe.
+                // Schedule a safety-net relaunch (in case the swap stalls) and exit so
+                // the applier can overwrite the binary; the new build then takes over.
+                if (standdown.IsActive())
+                {
+                    _watch.ReleaseStart();
+                    standdown.ScheduleSafetyNetRelaunch();
+                    Environment.Exit(0);
+                }
 
-            EnsureProcess(WatchdogMutexName, "--role", "watchdog");
-            _stop.Token.WaitHandle.WaitOne(WatchInterval);
+                _watch.Tick(DateTimeOffset.UtcNow);
+                if (_stop.Token.WaitHandle.WaitOne(CheckInterval))
+                {
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _watch.ReleaseStart();
         }
     }
 
-    private static void EnsureProcess(string mutexName, params string[] processArgs)
+    /// <summary>Wakes every other instance of this executable. A running instance is left alone.</summary>
+    internal static void ThawSiblings()
     {
-        using var probe = new Mutex(initiallyOwned: true, mutexName, out bool createdNew);
-        if (!createdNew)
+        Process[] processes;
+        try
+        {
+            processes = Process.GetProcessesByName(CurrentProcessName);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             return;
         }
 
-        probe.ReleaseMutex();
-        StartSibling(processArgs);
+        foreach (Process process in processes)
+        {
+            try
+            {
+                if (process.Id != Environment.ProcessId)
+                {
+                    ThawProcess(process.Id);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Undoes a process-wide freeze. Does nothing if the process is already running or gone.</summary>
+    internal static void ThawProcess(int processId)
+    {
+        if (processId <= 0 || processId == Environment.ProcessId)
+        {
+            return;
+        }
+
+        IntPtr handle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            NativeMethods.NtResumeProcess(handle);
+        }
+        finally
+        {
+            NativeMethods.CloseHandle(handle);
+        }
     }
 
     private static void StartSibling(params string[] args)

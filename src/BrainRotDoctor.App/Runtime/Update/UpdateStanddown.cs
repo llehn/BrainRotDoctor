@@ -22,8 +22,8 @@ internal sealed class PendingUpdate
 /// Coordinates the brief window in which the running primary + watchdog must
 /// release the installed exe so it can be overwritten.
 ///
-/// The watchdog normally respawns the primary within ~650 ms, so a swap can't
-/// just stop the processes. Instead the updater drops a <i>fresh</i> marker file;
+/// The partner notices a missing role on its next check (50 ms) and starts a
+/// replacement, so a swap can't just stop the processes. Instead the updater drops a <i>fresh</i> marker file;
 /// the primary and watchdog poll for it and stand down (exit) when they see it,
 /// then the applier overwrites the exe and relaunches. Requiring a recent marker
 /// (not merely a signal anyone could raise) keeps a stray stand-down from being

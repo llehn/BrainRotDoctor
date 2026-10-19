@@ -71,8 +71,8 @@ the config file during strict mode is undone at the next start. Off is shown
 as needing attention (amber); on is calm.
 
 The app starts with paired primary/watchdog roles by default. If either role is
-killed, the other restarts it. Normal startup also registers the app in the
-current user's Windows Run key.
+killed, the other restarts it. If either role is frozen, the other wakes it.
+Normal startup also registers the app in the current user's Windows Run key.
 
 The UI is **localized into 31 languages** (the 24 official EU languages plus
 Russian, Ukrainian, Bosnian, Serbian (Cyrillic), Norwegian Bokmål, Turkish, and
@@ -845,8 +845,8 @@ Because new doom-scrolling surfaces appear over time and enforcement bugs must b
 fixable, installed builds need to update without the user's involvement. A
 self-protection tool that can rewrite its own binary is also an attack surface
 against the user themselves (a tampered or downgraded build is a strict-mode
-bypass), and the existing watchdog (ADR-008 lineage) respawns the primary within
-~650 ms, so the running, file-locked exe cannot simply be replaced.
+bypass), and the partner restarts a missing role on its next check (ADR-014),
+so the running, file-locked exe cannot simply be replaced.
 
 #### Decision
 
@@ -1136,6 +1136,48 @@ private window. The marker has to be per window.
 - Rules still apply in private windows; incognito is not an escape.
 - Time already counted from private visits before this change cannot be
   unpicked.
+
+### ADR-014: One Check Wakes a Frozen Partner and Restarts a Dead One
+
+- **Status:** Accepted
+- **Date:** 2026-10-19
+- **Amends:** the respawn-check interval described in ADR-009
+
+#### Context
+
+The two roles only noticed a partner that had exited, and only every 650 ms. A
+frozen partner still holds its role mutex, so it was treated as on duty. The
+check that started a replacement also let go of the role mutex before the new
+process existed, so checking faster could start more than one.
+
+#### Decision
+
+- One check, every 50 ms.
+- If the partner is frozen, wake it. Waking a running partner does nothing.
+- If the partner has exited, start a replacement. A separate start mutex is held
+  from that decision until the new process has taken its role mutex, or until a
+  bounded wait expires. The new process does not look at the start mutex. The
+  role mutex still means only "this role is running."
+
+#### Rejected Alternatives
+
+**Two timers, a slow one for restart and a fast one for waking**
+
+Rejected. The slow timer existed only to avoid a second start. The start mutex
+does that. One check is enough.
+
+**Hold the role mutex until the new process takes it**
+
+Rejected. The new process treats a held role mutex as "this role is already
+running" and quits.
+
+#### Consequences
+
+- A frozen partner is woken on the next check.
+- A dead partner is replaced without a second copy being started while the first
+  start is in progress.
+- The update stand-down is unchanged. A swap still cannot just stop the
+  processes, because the partner starts a replacement.
 
 ## Contributing, License, and Security
 
