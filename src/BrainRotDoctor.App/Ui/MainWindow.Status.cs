@@ -123,12 +123,16 @@ internal sealed partial class MainWindow
         });
         menu.AddContent(picker);
         pause.Click += (_, _) => menu.ShowAt(pause);
+#if DEBUG
         _pauseMenu = (menu, pause, picker);
+#endif
         return pause;
     }
 
-    // The pause choices of the current screen, for the DEBUG snapshots.
+#if DEBUG
+    // The pause choices of the current screen, for the snapshots.
     private (PopupMenu Menu, Control Anchor, Control Content)? _pauseMenu;
+#endif
 
     /// <summary>What a pause means and how long it has left; Resume is the button in the header.</summary>
     private Control PausedNote(PauseState pause)
