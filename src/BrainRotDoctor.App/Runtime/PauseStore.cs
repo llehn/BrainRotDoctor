@@ -72,7 +72,7 @@ internal sealed class PauseStore
 internal sealed record PauseState(DateTimeOffset UntilUtc)
 {
     /// <summary>The longest a pause can last.</summary>
-    public static readonly TimeSpan Longest = TimeSpan.FromHours(8);
+    public static readonly TimeSpan Longest = TimeSpan.FromHours(24);
 
     /// <summary>Paused at <paramref name="now"/>: before the end, and the end no further away than a pause can last.</summary>
     public bool IsActiveAt(DateTimeOffset now) => now < UntilUtc && UntilUtc - now <= Longest;

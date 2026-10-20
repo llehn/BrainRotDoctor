@@ -67,8 +67,8 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The choices as tiles, plus Custom, which opens an amount and a unit with a
     /// button of its own. A pick calls <paramref name="start"/> with its length.
-    /// A pause can't outlast <see cref="PauseState.Longest"/>: longer choices show
-    /// but can't be picked, and a custom length stops there.
+    /// A pause can't outlast <see cref="PauseState.Longest"/>: a longer choice isn't
+    /// offered, and a custom length stops there, saying so once it gets there.
     /// </summary>
     private Control DurationPicker(DurationUse use, Action<TimeSpan> start)
     {
@@ -85,8 +85,12 @@ internal sealed partial class MainWindow
             var tiles = new List<Control>();
             foreach ((string label, string caption, TimeSpan length) in Lengths(DateTimeOffset.Now))
             {
-                bool fits = longest is not { } max || length <= max;
-                var tile = new ChoiceTile(label, fits ? caption : Loc.T("over_hours", (int)longest!.Value.TotalHours), selected: false, available: fits);
+                if (longest is { } max && length > max)
+                {
+                    continue;
+                }
+
+                var tile = new ChoiceTile(label, caption, false);
                 tile.Click += (_, _) => start(length);
                 tiles.Add(tile);
             }
@@ -131,11 +135,18 @@ internal sealed partial class MainWindow
         string Label()
         {
             DateTimeOffset end = DateTimeOffset.Now + custom.Length;
-            return pause ? Loc.T("pause_until_btn", Clock(end)) : Loc.T("lock_until_btn", WhenText(end));
+            return Loc.T(pause ? "pause_until_btn" : "lock_until_btn", WhenText(end));
         }
 
         var go = new PillButton(Label(), ButtonKind.Primary, pause ? Glyph.Pause : Glyph.Lock) { HorizontalAlignment = HorizontalAlignment.Left };
-        void Refresh() => go.Text = Label();
+
+        // The limit is mentioned only to someone who runs into it.
+        var limit = new TextLine(longest is { } most ? Loc.T("pause_max_note", (int)most.TotalHours) : "", TextStyle.Caption);
+        void Refresh()
+        {
+            go.Text = Label();
+            limit.IsVisible = longest is not null && custom.Amount >= Most(custom.Unit);
+        }
 
         amount.Changed += value =>
         {
@@ -150,12 +161,6 @@ internal sealed partial class MainWindow
         go.Click += (_, _) => start(custom.Length);
 
         Refresh();
-        StackPanel column = Layout.Column(Space.S3, Layout.Row(10, amount, unit), go);
-        if (longest is { } max)
-        {
-            column.Children.Add(new TextLine(Loc.T("pause_max_note", (int)max.TotalHours), TextStyle.Caption));
-        }
-
-        return column;
+        return Layout.Column(Space.S3, Layout.Row(10, amount, unit), go, limit);
     }
 }

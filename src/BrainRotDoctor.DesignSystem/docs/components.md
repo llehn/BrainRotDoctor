@@ -126,8 +126,7 @@ For choosing items from a list.
 
 ### `ChoiceTile`
 One of a grid of choices with a title and a caption (e.g. a duration). The
-selected tile is filled ink. `available: false` fades it and ignores clicks
-(a choice that exists but doesn't apply here; say why in the caption).
+selected tile is filled ink.
 
 ### `PickTile`
 A tile that can be added to a selection, with a round check in its corner.
