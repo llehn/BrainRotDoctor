@@ -114,7 +114,7 @@ internal sealed partial class MainWindow
             return pause;
         }
 
-        var menu = new PopupMenu(420);
+        var menu = new PopupMenu(PickerWidth + 12);
         menu.AddHeading(Loc.T("pause_for"));
         Control picker = DurationPicker(DurationUse.Pause, length =>
         {

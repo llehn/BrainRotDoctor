@@ -190,7 +190,9 @@ internal static class UiSnapshots
             window.PreviewPage("status");
             await Shot("02b-status-paused");
             _controller.Resume();
+            window.PreviewCustomOpen = true;
             window.PreviewPage("status");
+            await Shot("02d-status-strict-custom", 900);
             await Task.Delay(700);
             if (window.PreviewPauseMenu() is { } menuContent)
             {
@@ -204,6 +206,9 @@ internal static class UiSnapshots
                 }
             }
 
+            window.PreviewPage("strict");
+            await Shot("02e-strict-custom", 900);
+            window.PreviewCustomOpen = false;
             window.PreviewPage("home");
 
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");

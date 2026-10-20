@@ -50,6 +50,11 @@ public static class DesignTheme
         var text = new Style(x => x.OfType<TextBox>());
         text.Setters.Add(new Setter(TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Center));
         styles.Add(text);
+
+        // A dropdown is as wide as what it holds (each sets its own width), not capped by Fluent.
+        var flyout = new Style(x => x.OfType<FlyoutPresenter>());
+        flyout.Setters.Add(new Setter(Layoutable.MaxWidthProperty, double.PositiveInfinity));
+        styles.Add(flyout);
         return styles;
     }
 }

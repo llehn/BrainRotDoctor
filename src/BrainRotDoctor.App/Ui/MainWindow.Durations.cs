@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Layout;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.DesignSystem;
 
@@ -24,6 +25,16 @@ internal sealed partial class MainWindow
             _ => TimeSpan.FromHours(Amount),
         };
     }
+
+    /// <summary>The picker's width everywhere: three choices across, wide enough for the longest names.</summary>
+    private const double PickerWidth = 456;
+
+#if DEBUG
+    /// <summary>For the snapshots: pickers start with Custom open.</summary>
+    internal bool PreviewCustomOpen { get; set; }
+#else
+    private const bool PreviewCustomOpen = false;
+#endif
 
     private readonly CustomLength _strictCustom = new() { Amount = 3, Unit = 1 };
     private readonly CustomLength _pauseCustom = new() { Amount = 45, Unit = 0 };
@@ -64,8 +75,10 @@ internal sealed partial class MainWindow
         bool pause = use == DurationUse.Pause;
         CustomLength custom = pause ? _pauseCustom : _strictCustom;
         TimeSpan? longest = pause ? PauseState.Longest : null;
-        var host = new ContentControl();
-        bool customOpen = false;
+
+        // One size wherever it is: three tiles across, in a menu, a banner or a card alike.
+        var host = new ContentControl { Width = PickerWidth, HorizontalAlignment = HorizontalAlignment.Left };
+        bool customOpen = PreviewCustomOpen;
 
         void Build()
         {
@@ -113,23 +126,16 @@ internal sealed partial class MainWindow
         }
 
         var unit = new Segmented(units, custom.Unit, stretch: false);
-        var ends = new TextLine("");
-        var go = new PillButton("", ButtonKind.Primary, pause ? Glyph.Pause : Glyph.Lock);
 
-        void Refresh()
+        // The button says when it ends; it is as wide as its words, like every button.
+        string Label()
         {
             DateTimeOffset end = DateTimeOffset.Now + custom.Length;
-            if (pause)
-            {
-                ends.SetText(Loc.T("resumes_at", Clock(end)));
-                go.Text = Loc.T("pause_until_btn", Clock(end));
-            }
-            else
-            {
-                ends.SetPhrases(new Phrase(Loc.T("unlocks") + " "), new Phrase(WhenText(end), Strong: true));
-                go.Text = Loc.T("lock_until_btn", WhenText(end));
-            }
+            return pause ? Loc.T("pause_until_btn", Clock(end)) : Loc.T("lock_until_btn", WhenText(end));
         }
+
+        var go = new PillButton(Label(), ButtonKind.Primary, pause ? Glyph.Pause : Glyph.Lock) { HorizontalAlignment = HorizontalAlignment.Left };
+        void Refresh() => go.Text = Label();
 
         amount.Changed += value =>
         {
@@ -144,10 +150,7 @@ internal sealed partial class MainWindow
         go.Click += (_, _) => start(custom.Length);
 
         Refresh();
-        StackPanel column = Layout.Column(Space.S3,
-            Layout.Row(10, amount, unit),
-            new Card(Layout.Row(10, new Icon(Glyph.Clock, 18), ends), CardStyle.Inset, CardPadding.Compact),
-            go);
+        StackPanel column = Layout.Column(Space.S3, Layout.Row(10, amount, unit), go);
         if (longest is { } max)
         {
             column.Children.Add(new TextLine(Loc.T("pause_max_note", (int)max.TotalHours), TextStyle.Caption));
