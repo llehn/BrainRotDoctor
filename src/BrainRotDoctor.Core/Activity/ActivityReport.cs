@@ -39,17 +39,21 @@ public sealed class ActivityReport
     public static readonly TimeSpan SplitMinimum = TimeSpan.FromMinutes(2);
     public const double SplitShare = 0.25;
 
-    private ActivityReport(IReadOnlyList<ActivitySite> sites, TimeSpan total)
+    private ActivityReport(IReadOnlyList<ActivitySite> sites, TimeSpan total, TimeSpan okay)
     {
         Sites = sites;
         Total = total;
+        Okay = okay;
     }
 
     /// <summary>Sites with at least <see cref="SiteMinimum"/> today, longest first.</summary>
     public IReadOnlyList<ActivitySite> Sites { get; }
 
-    /// <summary>All time with a web page in front today.</summary>
+    /// <summary>All time with a web page of a tracked site in front today.</summary>
     public TimeSpan Total { get; }
+
+    /// <summary>Time on the sites you marked as okay, as one amount.</summary>
+    public TimeSpan Okay { get; }
 
     public static ActivityReport Build(ActivityRecord record)
     {
@@ -81,7 +85,7 @@ public sealed class ActivityReport
             }
         }
 
-        return new ActivityReport(sites.OrderByDescending(s => s.Time).ToList(), all);
+        return new ActivityReport(sites.OrderByDescending(s => s.Time).ToList(), all, TimeSpan.FromSeconds(record.OkaySeconds));
     }
 
     private static IReadOnlyList<ActivityPlace> Split(string host, TimeSpan siteTime, Dictionary<string, List<(string Key, TimeSpan Time)>> children)

@@ -17,6 +17,7 @@ internal static partial class Strings
         MergeRuleSwitch(tables);
         MergeStrictStepper(tables);
         MergeStatus(tables);
+        MergeDurations(tables);
         return tables;
     }
 

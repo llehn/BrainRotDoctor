@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace BrainRotDoctor.App.Runtime;
 
 /// <summary>
-/// Persists a pause so it survives a restart or an update swap. A pause with no
-/// end lasts until the user resumes.
+/// Persists a pause so it survives a restart or an update swap. A stored pause
+/// with no end (from before every pause had one) is not a pause any more.
 /// </summary>
 internal sealed class PauseStore
 {
@@ -68,8 +68,12 @@ internal sealed class PauseStore
     }
 }
 
-/// <param name="UntilUtc">When the pause ends, or null to pause until resumed.</param>
-internal sealed record PauseState(DateTimeOffset? UntilUtc)
+/// <param name="UntilUtc">When the pause ends. Every pause ends by itself, at most <see cref="Longest"/> after it starts.</param>
+internal sealed record PauseState(DateTimeOffset UntilUtc)
 {
-    public bool IsActiveAt(DateTimeOffset now) => UntilUtc is not { } until || now < until;
+    /// <summary>The longest a pause can last.</summary>
+    public static readonly TimeSpan Longest = TimeSpan.FromHours(8);
+
+    /// <summary>Paused at <paramref name="now"/>: before the end, and the end no further away than a pause can last.</summary>
+    public bool IsActiveAt(DateTimeOffset now) => now < UntilUtc && UntilUtc - now <= Longest;
 }

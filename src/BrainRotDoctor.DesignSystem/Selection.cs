@@ -287,16 +287,17 @@ public sealed class CheckRow : Border
     public event Action<bool>? Changed;
 }
 
-/// <summary>A tile among several choices: filled ink when selected.</summary>
+/// <summary>A tile among several choices: filled ink when selected, faded and not clickable when not available.</summary>
 public sealed class ChoiceTile : Border
 {
-    public ChoiceTile(string title, string caption, bool selected)
+    public ChoiceTile(string title, string caption, bool selected, bool available = true)
     {
         Height = 64;
         Padding = new Thickness(14, 0);
         CornerRadius = new CornerRadius(Radius.Inset);
         BorderThickness = new Thickness(1.5);
-        Cursor = new Cursor(StandardCursorType.Hand);
+        Cursor = new Cursor(available ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        Opacity = available ? 1 : 0.5;
         var text = Layout.Column(2,
             new TextLine(title, TextStyle.Label, selected ? TextTone.OnInk : TextTone.Primary),
             new TextLine(caption, TextStyle.Caption, selected ? TextTone.OnInk : TextTone.Tertiary) { FontSize = 12 });
@@ -307,7 +308,10 @@ public sealed class ChoiceTile : Border
         AddHandler(Gestures.TappedEvent, (_, e) =>
         {
             e.Handled = true;
-            Click?.Invoke(this, EventArgs.Empty);
+            if (available)
+            {
+                Click?.Invoke(this, EventArgs.Empty);
+            }
         });
     }
 

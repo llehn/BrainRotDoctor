@@ -95,8 +95,11 @@ public sealed class StrictModeStoreTests
         Assert.NotNull(new PauseStore(path).Load(now));
         Assert.Null(new PauseStore(path).Load(now.AddMinutes(16)));
 
-        new PauseStore(path).Save(new PauseState(null));
-        Assert.NotNull(new PauseStore(path).Load(now.AddYears(1)));
+        new PauseStore(path).Save(new PauseState(now.AddYears(1)));
+        Assert.Null(new PauseStore(path).Load(now));
+
+        File.WriteAllText(path, "{\"UntilUtc\":null}");
+        Assert.Null(new PauseStore(path).Load(now));
 
         new PauseStore(path).Save(null);
         Assert.Null(new PauseStore(path).Load(now));

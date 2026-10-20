@@ -11,7 +11,7 @@ namespace BrainRotDoctor.App.Ui;
 
 internal sealed partial class MainWindow
 {
-    // ---------- Status: today's sites as a map of time, and strict mode in one click ----------
+    // ---------- Status: today's sites as a map of time, pause, and strict mode in one click ----------
 
     /// <summary>A shortcut turns strict mode on after this long, so a slip of the mouse can still be cancelled.</summary>
     private static readonly TimeSpan ActivationDelay = TimeSpan.FromSeconds(3);
@@ -53,16 +53,21 @@ internal sealed partial class MainWindow
 
     private Control BuildStatusPage()
     {
-        StackPanel top = Layout.Column(Space.S4, new PageHeader(Loc.T("today")));
+        StackPanel top = Layout.Column(Space.S4, new PageHeader(Loc.T("today"), null, PauseControl()));
         if (_status.Pause is { } pause)
         {
-            top.Children.Add(PausedBanner(pause));
+            top.Children.Add(PausedNote(pause));
         }
 
         top.Children.Add(StrictBar());
         if (_justUntracked is { } host)
         {
             top.Children.Add(UntrackedNote(host));
+        }
+
+        if (Untracked().Count > 0 || ActivityReport.Build(_status.Activity).Okay > TimeSpan.Zero)
+        {
+            top.Children.Add(ShowEverythingOption());
         }
 
         top.Margin = new Thickness(0, 0, 0, Space.S5);
@@ -77,15 +82,66 @@ internal sealed partial class MainWindow
         _live.Add(status =>
         {
             ActivityReport report = ActivityReport.Build(status.Activity);
-            string signature = Signature(report);
+            bool everything = ShowEverything();
+            string signature = Signature(report, everything);
             if (signature != shown)
             {
                 shown = signature;
-                map.Content = SiteMap(report);
+                map.Content = SiteMap(report, everything);
             }
         });
 
         return page;
+    }
+
+    // ----- Pause -----
+
+    /// <summary>Pause (the same choices as strict mode), Resume while paused, unavailable in strict mode.</summary>
+    private Control PauseControl()
+    {
+        if (_status.IsPaused)
+        {
+            var resume = new PillButton(Loc.T("resume"), ButtonKind.Warn, Glyph.Play);
+            resume.Click += (_, _) => _controller.Resume();
+            return resume;
+        }
+
+        var pause = new PillButton(Loc.T("pause"), ButtonKind.Secondary, Glyph.Pause);
+        if (_status.StrictMode.IsActive)
+        {
+            pause.Enabled = false;
+            ToolTip.SetTip(pause, Loc.T("pause_strict_note"));
+            return pause;
+        }
+
+        var menu = new PopupMenu(420);
+        menu.AddHeading(Loc.T("pause_for"));
+        Control picker = DurationPicker(DurationUse.Pause, length =>
+        {
+            menu.Hide();
+            _controller.Pause(length);
+        });
+        menu.AddContent(picker);
+        pause.Click += (_, _) => menu.ShowAt(pause);
+        _pauseMenu = (menu, pause, picker);
+        return pause;
+    }
+
+    // The pause choices of the current screen, for the DEBUG snapshots.
+    private (PopupMenu Menu, Control Anchor, Control Content)? _pauseMenu;
+
+    /// <summary>What a pause means and how long it has left; Resume is the button in the header.</summary>
+    private Control PausedNote(PauseState pause)
+    {
+        TextLine message = Banner.Message(Tone.Warn);
+        _live.Add(status =>
+        {
+            TimeSpan left = pause.UntilUtc - DateTimeOffset.UtcNow;
+            message.SetPhrases(
+                new Phrase(Loc.T("paused_until", Clock(pause.UntilUtc)), Strong: true),
+                new Phrase($" {Loc.T("paused_explain")} {Loc.T("time_left", FormatSpan(left))}"));
+        });
+        return new Banner(Tone.Warn, Glyph.Pause, message);
     }
 
     // ----- Strict mode -----
@@ -115,38 +171,11 @@ internal sealed partial class MainWindow
             return new Banner(Tone.Accent, Glyph.Lock, Banner.Message(Tone.Accent, new Phrase(Loc.T("strict_activating"), Strong: true)), cancel);
         }
 
-        var shortcuts = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S2, LineSpacing = Space.S2 };
-        shortcuts.Children.Add(new TextLine(Loc.T("turn_on"), TextStyle.Body, TextTone.Warn) { Margin = new Thickness(0, 0, Space.S1, 0) });
-        foreach ((string label, DateTimeOffset end) in StrictShortcuts(DateTimeOffset.Now))
-        {
-            var shortcut = new PillButton(label);
-            shortcut.Click += (_, _) => BeginStrict(end);
-            shortcuts.Children.Add(shortcut);
-        }
-
-        var more = new PillButton(Loc.T("more_options"), ButtonKind.Ghost);
-        more.Click += (_, _) => Navigate(Page.Strict);
-        shortcuts.Children.Add(more);
-        foreach (Control child in shortcuts.Children)
-        {
-            child.VerticalAlignment = VerticalAlignment.Center;
-        }
-
-        return new Banner(Tone.Warn, Glyph.Lock, Layout.Column(Space.S3, Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true)), shortcuts));
-    }
-
-    /// <summary>A short focus, a longer one, the work day (while there's enough of it left) and the rest of the day.</summary>
-    private static IEnumerable<(string Label, DateTimeOffset End)> StrictShortcuts(DateTimeOffset now)
-    {
-        yield return (Loc.T("pause_1h"), now.AddHours(1));
-        yield return (Loc.T("len_2h"), now.AddHours(2));
-        var evening = new DateTimeOffset(now.Date.AddHours(18), now.Offset);
-        if (evening - now >= TimeSpan.FromHours(2))
-        {
-            yield return (Loc.T("until_clock", Clock(evening)), evening);
-        }
-
-        yield return (Loc.T("len_today"), new DateTimeOffset(now.Date.AddDays(1), now.Offset));
+        TextLine off = _status.IsPaused
+            ? Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true), new Phrase(" · " + Loc.T("strict_ends_pause")))
+            : Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true));
+        Control picker = DurationPicker(DurationUse.Strict, length => BeginStrict(DateTimeOffset.Now + length));
+        return new Banner(Tone.Warn, Glyph.Lock, Layout.Column(Space.S3, off, picker));
     }
 
     private void BeginStrict(DateTimeOffset end)
@@ -159,7 +188,7 @@ internal sealed partial class MainWindow
             _activation = null;
             _controller.ActivateStrictMode(end - DateTimeOffset.Now);
             _status = _controller.Status;
-            if (_page == Page.Status)
+            if (_page is Page.Status or Page.Strict)
             {
                 Rerender();
             }
@@ -177,7 +206,7 @@ internal sealed partial class MainWindow
 
         _activation.Stop();
         _activation = null;
-        if (_page == Page.Status)
+        if (_page is Page.Status or Page.Strict)
         {
             Rerender();
         }
@@ -185,9 +214,14 @@ internal sealed partial class MainWindow
 
     // ----- The map -----
 
-    private Control SiteMap(ActivityReport report)
+    /// <summary>
+    /// Today's sites by time. With everything shown, the okay sites join as one grey
+    /// tile in its place by size: how much of the day they take, nothing about which.
+    /// </summary>
+    private Control SiteMap(ActivityReport report, bool everything)
     {
-        if (report.Sites.Count == 0)
+        bool okay = everything && report.Okay >= ActivityReport.SiteMinimum;
+        if (report.Sites.Count == 0 && !okay)
         {
             return new Card(new TextLine(Loc.T("no_browsing_yet"), TextStyle.Small) { MaxWidth = 420 }, CardStyle.Outline, CardPadding.Roomy)
             {
@@ -196,9 +230,25 @@ internal sealed partial class MainWindow
         }
 
         var map = new TileMap();
+        void AddOkay()
+        {
+            if (okay)
+            {
+                okay = false;
+                var tile = new MapTile(Loc.T("okay_sites"), 0, report.Okay, muted: true);
+                ToolTip.SetTip(tile, $"{Loc.T("okay_sites")} · {Minutes(report.Okay)}");
+                map.Add(tile, report.Okay.TotalSeconds);
+            }
+        }
+
         for (int i = 0; i < Math.Min(MappedSites, report.Sites.Count); i++)
         {
             ActivitySite site = report.Sites[i];
+            if (site.Time < report.Okay)
+            {
+                AddOkay();
+            }
+
             TileMap? parts = null;
             if (site.Places.Count > 1)
             {
@@ -222,13 +272,35 @@ internal sealed partial class MainWindow
             map.Add(tile, site.Time.TotalSeconds);
         }
 
+        AddOkay();
         return map;
     }
 
     /// <summary>What the map shows, to the minute: it's rebuilt only when this changes.</summary>
-    private static string Signature(ActivityReport report) =>
+    private static string Signature(ActivityReport report, bool everything) =>
+        (everything ? $"okay:{(int)report.Okay.TotalMinutes};" : "") +
         string.Join(";", report.Sites.Take(MappedSites).Select(s =>
             $"{s.Host}:{(int)s.Time.TotalMinutes}:" + string.Join(",", s.Places.Select(p => $"{p.Path}={(int)p.Time.TotalMinutes}"))));
+
+    private bool? _showEverything;
+
+    private bool ShowEverything() => _showEverything ??= _settings.LoadShowEverything();
+
+    /// <summary>"Show everything": the map with the okay sites too. Remembered.</summary>
+    private Control ShowEverythingOption()
+    {
+        var option = new CheckOption(ShowEverything(), new TextLine(Loc.T("show_everything"), TextStyle.Small))
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        option.Changed += on =>
+        {
+            _showEverything = on;
+            _settings.SaveShowEverything(on);
+            Rerender();
+        };
+        return option;
+    }
 
     // ----- One site, looked at closely -----
 
@@ -273,7 +345,7 @@ internal sealed partial class MainWindow
             body.Children.Add(Layout.Tiles(parts, 220, Space.S3));
         }
 
-        var stop = new PillButton(Loc.T("stop_tracking", site.Host), ButtonKind.Accent);
+        var stop = new PillButton(Loc.T("this_site_okay"), ButtonKind.Accent);
         stop.Click += (_, _) => SetTracked(site.Host, false);
         body.Children.Add(Layout.Column(Space.S3, new Divider(), stop));
 
@@ -391,7 +463,7 @@ internal sealed partial class MainWindow
 
     private HashSet<string> Untracked() => _untracked ??= _settings.LoadUntrackedSites();
 
-    /// <summary>Stops (or resumes) recording a site's time; stopping also drops what today already holds.</summary>
+    /// <summary>Marks a site okay (its time joins the okay total, today's included) or tracks it on its own again.</summary>
     private void SetTracked(string host, bool tracked)
     {
         HashSet<string> untracked = Untracked();
@@ -416,7 +488,7 @@ internal sealed partial class MainWindow
     {
         var undo = new PillButton(Loc.T("undo"), ButtonKind.Accent, size: ButtonSize.Small);
         undo.Click += (_, _) => SetTracked(host, true);
-        return new Banner(Tone.Neutral, Glyph.Check, Banner.Message(Tone.Neutral, new Phrase(Loc.T("no_longer_tracked", host))), undo);
+        return new Banner(Tone.Neutral, Glyph.Check, Banner.Message(Tone.Neutral, new Phrase(Loc.T("okay_now", host))), undo);
     }
 
     // ----- Formatting -----

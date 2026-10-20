@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
         page.Children.Add(new PageHeader(
             Loc.T("rules"),
             Loc.T("rules_subtitle"),
-            Layout.Row(10, PauseControl(), NewRuleButton())));
+            NewRuleButton()));
 
         if (_status.Pause is { } pause)
         {
@@ -42,47 +42,10 @@ internal sealed partial class MainWindow
         return button;
     }
 
-    private Control PauseControl()
-    {
-        if (_status.IsPaused)
-        {
-            var resume = new PillButton(Loc.T("resume"), ButtonKind.Warn, Glyph.Play);
-            resume.Click += (_, _) => _controller.Resume();
-            return resume;
-        }
-
-        var pause = new PillButton(Loc.T("pause"), ButtonKind.Secondary, Glyph.Pause);
-        if (_status.StrictMode.IsActive)
-        {
-            pause.Enabled = false;
-            ToolTip.SetTip(pause, Loc.T("pause_strict_note"));
-            return pause;
-        }
-
-        DateTimeOffset now = DateTimeOffset.Now;
-        TimeSpan untilMidnight = now.Date.AddDays(1) - now.DateTime;
-        var menu = new PopupMenu();
-        menu.AddHeading(Loc.T("pause_for"));
-        AddPauseOption(menu, Loc.T("pause_15m"), TimeSpan.FromMinutes(15));
-        AddPauseOption(menu, Loc.T("pause_1h"), TimeSpan.FromHours(1));
-        AddPauseOption(menu, Loc.T("pause_today"), untilMidnight);
-        AddPauseOption(menu, Loc.T("pause_manual"), null);
-        menu.AddDivider();
-        menu.AddNote(Glyph.Lock, Loc.T("pause_strict_note"));
-
-        pause.Click += (_, _) => menu.ShowAt(pause);
-        return pause;
-    }
-
-    private void AddPauseOption(PopupMenu menu, string label, TimeSpan? duration) =>
-        menu.AddItem(
-            label,
-            duration is { } d ? Loc.T("until_time", Clock(DateTimeOffset.Now + d)) : null,
-            () => _controller.Pause(duration));
-
+    /// <summary>Rules has no pause of its own (that's on Status), so while paused its banner carries the way back.</summary>
     private Control PausedBanner(PauseState pause)
     {
-        string until = pause.UntilUtc is { } u ? Loc.T("paused_until", Clock(u)) : Loc.T("paused_manual");
+        string until = Loc.T("paused_until", Clock(pause.UntilUtc));
         var resume = new PillButton(Loc.T("resume_now"), ButtonKind.Primary);
         resume.Click += (_, _) => _controller.Resume();
         return new Banner(

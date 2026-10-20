@@ -61,7 +61,17 @@ internal sealed class UiSettingsStore
         Write(state);
     }
 
-    /// <summary>Sites you said are fine, by host: their time is not recorded at all.</summary>
+    /// <summary>Whether the status map shows everything, the okay sites included.</summary>
+    public bool LoadShowEverything() => Read().ShowEverything;
+
+    public void SaveShowEverything(bool show)
+    {
+        State state = Read();
+        state.ShowEverything = show;
+        Write(state);
+    }
+
+    /// <summary>Sites you said are okay, by host: their time is recorded only as one shared total.</summary>
     public HashSet<string> LoadUntrackedSites() => new(Read().UntrackedSites ?? new(), StringComparer.Ordinal);
 
     public void SaveUntrackedSites(IEnumerable<string> hosts)
@@ -103,5 +113,6 @@ internal sealed class UiSettingsStore
         public string Theme { get; set; } = nameof(ThemePreference.System);
         public string Language { get; set; } = "auto";
         public List<string>? UntrackedSites { get; set; }
+        public bool ShowEverything { get; set; }
     }
 }

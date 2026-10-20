@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
 
     private bool _showUntracked;
 
-    /// <summary>The sites you said are fine: behind a button, since nobody needs to see that list at a glance.</summary>
+    /// <summary>The sites you said are okay: behind a button, since nobody needs to see that list at a glance.</summary>
     private Control? UntrackedGroup()
     {
         HashSet<string> untracked = Untracked();
@@ -82,10 +82,10 @@ internal sealed partial class MainWindow
         DockPanel.SetDock(toggle, Dock.Right);
         toggle.Margin = new Thickness(Space.S4, 0, 0, 0);
         head.Children.Add(toggle);
-        head.Children.Add(new TextLine(Loc.T("untracked_help"), TextStyle.Small));
+        head.Children.Add(new TextLine(Loc.T("okay_help"), TextStyle.Small));
         if (!_showUntracked)
         {
-            return new Group(Loc.T("untracked_sites"), Group.Row(head));
+            return new Group(Loc.T("okay_sites"), Group.Row(head));
         }
 
         var sites = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = Space.S3, LineSpacing = Space.S2 };
@@ -96,6 +96,6 @@ internal sealed partial class MainWindow
             sites.Children.Add(new Card(Layout.Row(Space.S2, new TextLine(host, TextStyle.Strong), again), CardStyle.Inset, CardPadding.Compact));
         }
 
-        return new Group(Loc.T("untracked_sites"), Group.Row(head), Group.Row(sites));
+        return new Group(Loc.T("okay_sites"), Group.Row(head), Group.Row(sites));
     }
 }

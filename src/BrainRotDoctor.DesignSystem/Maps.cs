@@ -214,7 +214,8 @@ public sealed class MapTile : Border
     /// <param name="time">The amount of time the tile stands for, shown as clocks.</param>
     /// <param name="inside">Smaller tiles inside (a <see cref="TileMap"/> of nested tiles), shown when there's room.</param>
     /// <param name="nested">The tile sits inside another one.</param>
-    public MapTile(string title, int colour, TimeSpan time, Control? inside = null, bool nested = false)
+    /// <param name="muted">A plain grey tile that stands apart from the coloured ones and can't be opened.</param>
+    public MapTile(string title, int colour, TimeSpan time, Control? inside = null, bool nested = false, bool muted = false)
     {
         _nested = nested;
         _inside = inside;
@@ -244,10 +245,16 @@ public sealed class MapTile : Border
         ClipToBounds = true;
         CornerRadius = new CornerRadius(nested ? Radius.Control : Radius.Feature);
         Padding = new Thickness(nested ? 12 : Space.S5);
-        this[!BackgroundProperty] = Palette.Dyn(nested ? Palette.TileInset : Palette.Tiles[Math.Abs(colour) % Palette.Tiles.Length]);
+        this[!BackgroundProperty] = Palette.Dyn(nested ? Palette.TileInset : muted ? Palette.Track : Palette.Tiles[Math.Abs(colour) % Palette.Tiles.Length]);
+        if (muted)
+        {
+            BorderThickness = new Thickness(1);
+            this[!BorderBrushProperty] = Palette.Dyn(Palette.BorderStrong);
+        }
+
         SizeChanged += (_, e) => Adapt(e.NewSize);
 
-        if (!nested)
+        if (!nested && !muted)
         {
             Cursor = new Cursor(StandardCursorType.Hand);
             PointerEntered += (_, _) => Opacity = 0.88;

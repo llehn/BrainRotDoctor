@@ -116,17 +116,18 @@ internal sealed class EnforcementController : IDisposable
     }
 
     /// <summary>
-    /// Stops blocking and allowance counting for <paramref name="duration"/> (null =
-    /// until <see cref="Resume"/>). Refused while strict mode is active.
+    /// Stops blocking and allowance counting for <paramref name="duration"/>, at most
+    /// <see cref="PauseState.Longest"/>. Refused while strict mode is active.
     /// </summary>
-    public bool Pause(TimeSpan? duration)
+    public bool Pause(TimeSpan duration)
     {
-        if (_strictModeStore.GetSnapshot().IsActive)
+        if (_strictModeStore.GetSnapshot().IsActive || duration <= TimeSpan.Zero)
         {
             return false;
         }
 
-        SetPause(new PauseState(duration is { } d ? DateTimeOffset.UtcNow + d : null));
+        TimeSpan length = duration < PauseState.Longest ? duration : PauseState.Longest;
+        SetPause(new PauseState(DateTimeOffset.UtcNow + length));
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
         return true;
     }
@@ -141,8 +142,8 @@ internal sealed class EnforcementController : IDisposable
         EditableConfiguration.FromJson(_configurationJson);
 
     /// <summary>
-    /// Sites whose time is not recorded at all; what today's statistics already
-    /// hold for them is dropped at once.
+    /// Sites marked as okay: their time is recorded only as one shared total, and
+    /// what today's statistics already hold for them joins it at once.
     /// </summary>
     public void SetUntrackedSites(IEnumerable<string> hosts)
     {

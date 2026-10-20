@@ -126,7 +126,8 @@ For choosing items from a list.
 
 ### `ChoiceTile`
 One of a grid of choices with a title and a caption (e.g. a duration). The
-selected tile is filled ink.
+selected tile is filled ink. `available: false` fades it and ignores clicks
+(a choice that exists but doesn't apply here; say why in the caption).
 
 ### `PickTile`
 A tile that can be added to a selection, with a round check in its corner.
@@ -245,7 +246,8 @@ optionally a `TileMap` of smaller tiles inside. Title and clocks grow with the
 tile; what doesn't fit is left out (the inner tiles first). `colour` picks one
 of the tile colours, which only tell neighbours apart. Top-level tiles are
 clickable (`Click`); `nested` ones sit inside another tile, lighter, with a
-literal (mono) title.
+literal (mono) title. A `muted` tile is plain grey with an outline and not
+clickable: an amount that stands apart from the rest (time not told apart by site).
 
 ### `Overlay`
 A sheet over a dimmed screen: one thing looked at closely, with its actions
@@ -260,6 +262,7 @@ An entry of the sidebar: icon, label, optional badge. Raised when current.
 ### `PopupMenu`
 A menu dropping down from a button: `AddHeading`, `AddItem(label, hint, pick)`,
 `AddDivider`, `AddNote`; `ShowAt(anchor)`. Picking an item closes it.
+`AddContent` holds anything else (choices, a field, a button); close it with `Hide`.
 
 ### `TopBar`
 The bar of a full-window screen: a way back (`Ghost` button with

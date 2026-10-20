@@ -207,8 +207,7 @@ internal sealed partial class MainWindow : AppWindow
 
     private static string Clock(DateTimeOffset time) => time.ToLocalTime().ToString("HH:mm", Loc.Culture);
 
-    private string PauseUntilText(PauseState pause) =>
-        pause.UntilUtc is { } until ? Loc.T("resumes_at", Clock(until)) : Loc.T("until_you_resume");
+    private static string PauseUntilText(PauseState pause) => Loc.T("resumes_at", Clock(pause.UntilUtc));
 
     private static string FormatSpan(TimeSpan span)
     {

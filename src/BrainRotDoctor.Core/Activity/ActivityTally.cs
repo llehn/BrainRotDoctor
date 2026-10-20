@@ -22,6 +22,9 @@ public sealed class ActivityRecord
 
     public Dictionary<string, PlaceTotal> Places { get; set; } = new(StringComparer.Ordinal);
 
+    /// <summary>Time on sites you marked as okay, all of them together: no site is told apart.</summary>
+    public double OkaySeconds { get; set; }
+
     /// <summary>Blocking was paused at some point today.</summary>
     public bool PausedToday { get; set; }
 
@@ -32,6 +35,7 @@ public sealed class ActivityRecord
     {
         Day = Day,
         Places = Places.ToDictionary(p => p.Key, p => new PlaceTotal { Seconds = p.Value.Seconds, Visits = p.Value.Visits }, StringComparer.Ordinal),
+        OkaySeconds = OkaySeconds,
         PausedToday = PausedToday,
         StrictToday = StrictToday,
     };
@@ -59,14 +63,20 @@ public sealed class ActivityTally
     private DateTimeOffset? _lastTick;
 
     /// <summary>
-    /// Sites (by host) whose time is never counted. Whatever was already counted
-    /// for them today is dropped too: not tracking means not keeping, not hiding.
+    /// Sites (by host) you marked as okay: their time is counted only into one
+    /// shared total, never per site. What they already had today joins that total
+    /// and their own places are dropped.
     /// </summary>
     public void SetUntracked(IEnumerable<string> hosts)
     {
         _untracked = hosts.Select(PlaceKey.Host).ToHashSet(StringComparer.Ordinal);
         foreach (string key in _record.Places.Keys.Where(k => _untracked.Contains(PlaceKey.HostOf(k))).ToList())
         {
+            if (!key.Contains('/'))
+            {
+                _record.OkaySeconds += _record.Places[key].Seconds;
+            }
+
             _record.Places.Remove(key);
         }
     }
@@ -86,8 +96,10 @@ public sealed class ActivityTally
         IReadOnlyList<string> keys = PlaceKey.Of(front);
         if (keys.Count > 0 && _untracked.Contains(keys[0]))
         {
+            _record.OkaySeconds += elapsed.TotalSeconds;
             keys = Array.Empty<string>();
         }
+
         var inFront = new HashSet<string>(StringComparer.Ordinal);
         foreach (string key in keys)
         {

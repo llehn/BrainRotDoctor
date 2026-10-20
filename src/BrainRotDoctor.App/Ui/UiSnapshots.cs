@@ -187,7 +187,24 @@ internal static class UiSnapshots
 
             _controller.Pause(TimeSpan.FromMinutes(15));
             await Shot("02-home-paused");
+            window.PreviewPage("status");
+            await Shot("02b-status-paused");
             _controller.Resume();
+            window.PreviewPage("status");
+            await Task.Delay(700);
+            if (window.PreviewPauseMenu() is { } menuContent)
+            {
+                await Task.Delay(700);
+                if (TopLevel.GetTopLevel(menuContent) is { } popup)
+                {
+                    var popupSize = new PixelSize((int)popup.Bounds.Width, (int)popup.Bounds.Height);
+                    using var popupBitmap = new RenderTargetBitmap(popupSize, new Vector(96, 96));
+                    popupBitmap.Render(popup);
+                    popupBitmap.Save(Path.Combine(_outDir, "02c-pause-picker.png"));
+                }
+            }
+
+            window.PreviewPage("home");
 
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");
             await Shot("03-editor-feeds", 1500);
@@ -249,6 +266,9 @@ internal static class UiSnapshots
             await Shot("13-home-strict");
             window.PreviewPage("status");
             await Shot("14-status-strict");
+
+            window.PreviewEverything("github.com", "docs.avaloniaui.net");
+            await Shot("15-status-everything");
 
             await CaptureGallery("gallery-light", ThemeVariant.Light);
             await CaptureGallery("gallery-dark", ThemeVariant.Dark);
@@ -316,6 +336,27 @@ internal sealed partial class MainWindow
         _untracked = new HashSet<string>(StringComparer.Ordinal) { "github.com", "mail.google.com", "docs.avaloniaui.net" };
         _showUntracked = true;
         Rerender();
+    }
+
+    /// <summary>Opens the pause choices; returns their content so its popup can be captured.</summary>
+    internal Control? PreviewPauseMenu()
+    {
+        if (_pauseMenu is not { } open)
+        {
+            return null;
+        }
+
+        open.Menu.ShowAt(open.Anchor);
+        return open.Content;
+    }
+
+    /// <summary>The status view with these sites okay and everything shown: their time as one grey tile.</summary>
+    internal void PreviewEverything(params string[] okay)
+    {
+        _untracked = new HashSet<string>(okay, StringComparer.Ordinal);
+        _controller.SetUntrackedSites(_untracked);
+        _showEverything = true;
+        PreviewPage("status");
     }
 
     internal void PreviewAddSites(params string[] picks)

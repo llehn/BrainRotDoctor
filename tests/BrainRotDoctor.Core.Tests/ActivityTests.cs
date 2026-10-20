@@ -168,7 +168,7 @@ public class ActivityTests
     // ---------- Not tracked ----------
 
     [Fact]
-    public void An_untracked_site_is_never_counted_and_what_it_had_today_is_dropped()
+    public void An_okay_site_counts_only_into_the_shared_total_and_its_own_places_are_dropped()
     {
         var tally = new ActivityTally();
         DateTimeOffset t = Stay(tally, "https://reddit.com/r/a", T0, 10);
@@ -176,23 +176,27 @@ public class ActivityTests
 
         tally.SetUntracked(new[] { "www.reddit.com" });
         Assert.DoesNotContain(tally.Snapshot().Places.Keys, k => k.StartsWith("reddit.com", StringComparison.Ordinal));
+        Assert.Equal(9, tally.Snapshot().OkaySeconds, 3);
 
         t = Stay(tally, "https://reddit.com/r/a", t, 10);
         Assert.DoesNotContain(tally.Snapshot().Places.Keys, k => k.StartsWith("reddit.com", StringComparison.Ordinal));
+        Assert.Equal(19, tally.Snapshot().OkaySeconds, 3);
         Assert.Equal(10, tally.Snapshot().Places["github.com"].Seconds, 3);
 
         tally.SetUntracked(Array.Empty<string>());
         Stay(tally, "https://reddit.com/r/a", t, 10);
         Assert.Equal(10, tally.Snapshot().Places["reddit.com"].Seconds, 3);
+        Assert.Equal(19, tally.Snapshot().OkaySeconds, 3);
     }
 
     [Fact]
-    public void Restored_totals_lose_sites_that_are_not_tracked()
+    public void Restored_totals_move_okay_sites_into_the_shared_total()
     {
         var tally = new ActivityTally();
         tally.SetUntracked(new[] { "reddit.com" });
         tally.Restore(Record(("reddit.com", 20, 2), ("github.com", 30, 1)), T0);
 
         Assert.Equal(new[] { "github.com" }, tally.Snapshot().Places.Keys);
+        Assert.Equal(TimeSpan.FromMinutes(20), ActivityReport.Build(tally.Snapshot()).Okay);
     }
 }

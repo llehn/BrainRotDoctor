@@ -105,7 +105,16 @@ public sealed class PopupMenu
         _items.Children.Add(row);
     }
 
+    /// <summary>Any content of its own (choices, a field and a button); it closes on <see cref="Hide"/>.</summary>
+    public void AddContent(Control content)
+    {
+        content.Margin = new Thickness(6);
+        _items.Children.Add(content);
+    }
+
     public void ShowAt(Control anchor) => _flyout.ShowAt(anchor);
+
+    public void Hide() => _flyout.Hide();
 }
 
 /// <summary>
