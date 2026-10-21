@@ -46,9 +46,16 @@ is a tile whose size is its share of today's browser time, filling the window
 without scrolling; under each name, clock faces show the time itself (one per
 hour, the last one filling, stronger the more there is), with the exact time
 only on hover. Nothing is flagged: only the user decides what's a waste.
-Clicking a tile enlarges it with the actions: block the site or one of its
-parts (always, or after 5 or 15 minutes an hour, saved at once; "More options"
-opens the rule editor), or "It's fine. Stop tracking": that site's time is then
+A site some rule already limits, any part of it, says so on its tile
+("Limited · Feeds"). Clicking a tile enlarges it: first the rules it is already
+in, each with what it blocks there, when, and what it is doing right now (a rule
+switched off can be switched on; outside strict mode a rule opens in the
+editor), then the actions: block the site or one of its parts by adding it to
+a rule there is already (not in strict mode, where rules can only be added) or
+in a new one (always, or after 5 or 15 minutes an hour, saved at once; "More
+options" opens the rule editor). While paused the enlarged site says so, with
+Resume, and that a block made now starts when the pause ends. Or "It's fine.
+Stop tracking": that site's time is then
 not recorded at all, and what today already held for it is dropped (the list is
 in Settings, behind a button). Only the page in the foreground browser window
 counts. A private window (Incognito, InPrivate, Private Browsing) is still

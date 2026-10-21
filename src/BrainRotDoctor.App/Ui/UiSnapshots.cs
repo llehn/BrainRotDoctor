@@ -177,6 +177,12 @@ internal static class UiSnapshots
             await Shot("00-status");
             window.PreviewSite("reddit.com");
             await Shot("00b-status-site", 900);
+            window.PreviewSite("youtube.com");
+            await Shot("00e-status-site-in-rules", 900);
+            _controller.Pause(TimeSpan.FromMinutes(15));
+            window.PreviewSite("instagram.com");
+            await Shot("00f-status-site-paused", 900);
+            _controller.Resume();
             window.PreviewSite(null);
             window.PreviewStrictActivating();
             await Shot("00c-status-activating");

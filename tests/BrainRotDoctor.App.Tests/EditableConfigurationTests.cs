@@ -147,4 +147,80 @@ public sealed class EditableConfigurationTests
         Assert.False(compiled.MatchesUrl(new Uri("https://news.example/sport?tab=live")));
         Assert.True(compiled.MatchesUrl(new Uri("https://news.example/sport")));
     }
+
+    private const string FeedsJson = """
+    {
+      "rules": [
+        {
+          "id": "feeds", "name": "Feeds", "allowanceMinutes": 5, "allDay": true,
+          "sites": [
+            {
+              "label": "Instagram", "host": "instagram.com", "everythingElse": "allow",
+              "pages": [
+                { "name": "Home feed", "path": "/", "match": "exact", "action": "block" },
+                { "name": "Reels", "path": "/reel", "match": "prefix", "action": "block" },
+                { "name": "Explore", "path": "/explore", "match": "under", "action": "allow" },
+                { "name": "Messages", "path": "/direct", "match": "under", "action": "allow" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    """;
+
+    private static Rule Blocked(EditableConfiguration.EditableRule rule) => rule.ToRule();
+
+    [Fact]
+    public void Adding_a_part_of_a_site_the_rule_has_blocks_it_there_and_keeps_the_rest()
+    {
+        EditableConfiguration.EditableRule rule = EditableConfiguration.FromJson(FeedsJson).Rules[0];
+        rule.Block(EditableConfiguration.EditableSite.FromDocument(SiteMigration.FromUrl("/direct", "https://instagram.com/direct", includeSubpaths: true)));
+
+        Rule now = Blocked(rule);
+        Assert.Single(rule.Sites);
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/direct/t/1")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/reels/x")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/")));
+        Assert.False(now.MatchesUrl(new Uri("https://instagram.com/explore")));
+    }
+
+    [Fact]
+    public void Adding_the_whole_site_blocks_the_pages_the_rule_kept_open()
+    {
+        EditableConfiguration.EditableRule rule = EditableConfiguration.FromJson(FeedsJson).Rules[0];
+        rule.Block(EditableConfiguration.EditableSite.FromDocument(SiteMigration.FromUrl("instagram.com", "https://instagram.com", includeSubpaths: true)));
+
+        Rule now = Blocked(rule);
+        Assert.Single(rule.Sites);
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/explore")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/direct")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/someone")));
+    }
+
+    [Fact]
+    public void Adding_the_rest_of_a_site_keeps_its_parts_as_open_as_they_were()
+    {
+        EditableConfiguration.EditableRule rule = EditableConfiguration.FromJson(FeedsJson).Rules[0];
+        EditableConfiguration.EditableSite rest = EditableConfiguration.EditableSite.FromDocument(SiteMigration.FromUrl("rest", "https://instagram.com", includeSubpaths: true));
+        rest.Pages.Add(new EditableConfiguration.EditablePage { Name = "/direct", Path = "/direct", Match = PageMatch.Under, Block = false });
+        rest.Pages.Add(new EditableConfiguration.EditablePage { Name = "/reels", Path = "/reels", Match = PageMatch.Under, Block = false });
+        rule.Block(rest);
+
+        Rule now = Blocked(rule);
+        Assert.False(now.MatchesUrl(new Uri("https://instagram.com/direct")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/reels/x")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/explore")));
+        Assert.True(now.MatchesUrl(new Uri("https://instagram.com/someone")));
+    }
+
+    [Fact]
+    public void Adding_a_site_the_rule_lacks_adds_it()
+    {
+        EditableConfiguration.EditableRule rule = EditableConfiguration.FromJson(FeedsJson).Rules[0];
+        rule.Block(EditableConfiguration.EditableSite.FromDocument(SiteMigration.FromUrl("reddit.com", "https://reddit.com", includeSubpaths: true)));
+
+        Assert.Equal(2, rule.Sites.Count);
+        Assert.True(Blocked(rule).MatchesUrl(new Uri("https://www.reddit.com/r/x")));
+    }
 }

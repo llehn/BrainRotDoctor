@@ -207,6 +207,7 @@ public sealed class MapTile : Border
     private readonly TextLine _title;
     private readonly ClockFill _clock;
     private readonly Control? _inside;
+    private readonly Control? _badge;
     private readonly bool _nested;
 
     /// <param name="title">The name on the tile.</param>
@@ -215,10 +216,12 @@ public sealed class MapTile : Border
     /// <param name="inside">Smaller tiles inside (a <see cref="TileMap"/> of nested tiles), shown when there's room.</param>
     /// <param name="nested">The tile sits inside another one.</param>
     /// <param name="muted">A plain grey tile that stands apart from the coloured ones and can't be opened.</param>
-    public MapTile(string title, int colour, TimeSpan time, Control? inside = null, bool nested = false, bool muted = false)
+    /// <param name="badge">A small mark under the clocks (a <see cref="Chip"/>), shown when there's room.</param>
+    public MapTile(string title, int colour, TimeSpan time, Control? inside = null, bool nested = false, bool muted = false, Control? badge = null)
     {
         _nested = nested;
         _inside = inside;
+        _badge = badge;
         _title = new TextLine(title, nested ? TextStyle.Code : TextStyle.Heading);
         if (nested)
         {
@@ -231,6 +234,11 @@ public sealed class MapTile : Border
         _title.SingleLine = true;
         _clock = new ClockFill(time, nested ? 14 : 24);
         StackPanel head = Layout.Column(nested ? Space.S2 : 10, _title, _clock);
+        if (badge is not null)
+        {
+            badge.HorizontalAlignment = HorizontalAlignment.Left;
+            head.Children.Add(badge);
+        }
 
         var dock = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(head, Dock.Top);
@@ -272,6 +280,11 @@ public sealed class MapTile : Border
             bool labelled = size.Width > 64 && size.Height > 34;
             _title.IsVisible = labelled;
             _clock.IsVisible = labelled && size.Height > 64;
+            if (_badge is not null)
+            {
+                _badge.IsVisible = labelled && size.Width > 150;
+            }
+
             return;
         }
 
@@ -291,6 +304,11 @@ public sealed class MapTile : Border
         if (_inside is not null)
         {
             _inside.IsVisible = area > 50_000;
+        }
+
+        if (_badge is not null)
+        {
+            _badge.IsVisible = size.Width > 170 && size.Height > 130;
         }
     }
 }

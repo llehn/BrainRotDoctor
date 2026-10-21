@@ -115,6 +115,55 @@ internal sealed class EditableConfiguration
         /// <summary>The validated rule, for checking an address against unsaved edits.</summary>
         internal Rule ToRule() => ConfigurationLoader.MapRule(ToDocument());
 
+        /// <summary>
+        /// Adds what <paramref name="addition"/> blocks to this rule. A site the
+        /// rule already has takes the new blocks in: a page it allowed inside them
+        /// becomes blocked, a page the addition keeps open stays as open as it was.
+        /// Nothing the rule blocked before is opened.
+        /// </summary>
+        internal void Block(EditableSite addition)
+        {
+            EditableSite? existing = Sites.FirstOrDefault(s =>
+                string.Equals(SiteUrl.NormalizeHost(s.Host), SiteUrl.NormalizeHost(addition.Host), StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                Sites.Add(addition);
+                return;
+            }
+
+            TargetSite before = existing.ToTargetSite();
+            TargetSite added = addition.ToTargetSite();
+            foreach (EditablePage page in existing.Pages.Where(p => !p.Block))
+            {
+                if (added.Blocks(existing.Address(page)))
+                {
+                    page.Block = true;
+                }
+            }
+
+            existing.BlockEverythingElse |= addition.BlockEverythingElse;
+            foreach (EditablePage page in addition.Pages)
+            {
+                EditablePage? same = existing.Pages.FirstOrDefault(p => p.Conditions.Count == 0 && page.Conditions.Count == 0
+                    && p.Match == page.Match && SitePage.NormalizePath(p.Path) == SitePage.NormalizePath(page.Path));
+                if (page.Block)
+                {
+                    if (same is null)
+                    {
+                        existing.Pages.Add(page);
+                    }
+                    else
+                    {
+                        same.Block = true;
+                    }
+                }
+                else if (same is null && !before.Blocks(existing.Address(page)))
+                {
+                    existing.Pages.Add(page);
+                }
+            }
+        }
+
         private static TimeOnly ParseTime(string? text, TimeOnly fallback)
             => TimeOnly.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out TimeOnly t) ? t : fallback;
 
@@ -195,6 +244,14 @@ internal sealed class EditableConfiguration
         };
 
         internal TargetSite ToTargetSite() => ConfigurationLoader.MapSite(ToDocument());
+
+        /// <summary>An address on this site that <paramref name="page"/> fits.</summary>
+        internal Uri Address(EditablePage page)
+        {
+            string query = string.Join("&", page.Conditions.Where(c => !string.IsNullOrWhiteSpace(c.Key))
+                .Select(c => Uri.EscapeDataString(c.Key.Trim()) + "=" + Uri.EscapeDataString(c.Value.Trim())));
+            return new Uri($"https://{SiteUrl.NormalizeHost(Host)}{SitePage.NormalizePath(page.Path)}{(query.Length > 0 ? "?" + query : "")}");
+        }
 
         public static EditableSite FromCatalog(CatalogSite site) => FromDocument(site.ToDocument());
 
