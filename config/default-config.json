@@ -10,6 +10,11 @@
   //       starting with this text), optional "query" conditions, and an
   //       "action" ("block" or "allow"). When several pages fit an address, the
   //       most specific one decides.
+  //   - "apps": optional apps and games it covers, each with a "kind":
+  //       "steam-games" (every Steam game), "steam" (the Steam client),
+  //       "steam-game" with its "folder" under steamapps\common, or
+  //       "program" with its "exe" and/or file "description". A rule needs at
+  //       least one site or app.
   //   - "allowanceMinutes": minutes of access allowed per hour. Omit it to block
   //       completely while the rule is active.
   //   - "allDay": true, or set "allDay": false with a "from"/"to" 24-hour window

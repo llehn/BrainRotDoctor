@@ -1,5 +1,6 @@
 using BrainRotDoctor.Core.Accounting;
 using BrainRotDoctor.Core.Activity;
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 using System.IO;
 
@@ -16,9 +17,14 @@ internal sealed class EnforcementController : IDisposable
     private static readonly TimeSpan PopOverdue = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan SceneOverdue = TimeSpan.FromSeconds(10);
 
+    // An app that couldn't be closed (administrator rights, a Store app's frame) isn't tried again for this long.
+    private static readonly TimeSpan RetryRefused = TimeSpan.FromMinutes(1);
+
     private BudgetEngine _engine;
     private readonly IBrowserObserver _observer;
     private readonly IBrowserTabCloser _tabCloser;
+    private readonly IAppObserver? _appObserver;
+    private readonly IAppCloser? _appCloser;
     private string _configSource;
     private string _configurationJson;
     private string? _configurationFilePath;
@@ -34,9 +40,16 @@ internal sealed class EnforcementController : IDisposable
     private readonly System.Threading.Timer _timer;
     private readonly object _sync = new();
 
-    // Serialises everything that talks to the browsers or the engine: the 1-second
-    // tick and a scene's pop run on different threads.
+    // Serialises everything that talks to the browsers, the app observer or the engine:
+    // the 1-second tick and a scene's pop run on different threads.
     private readonly object _browserLock = new();
+
+    // When open apps close, and per app (by key) until when a refused close isn't tried again.
+    private readonly BlockCountdown _countdown = new();
+    private readonly Dictionary<string, DateTimeOffset> _appRefusedUntil = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _appsClosing = new(StringComparer.Ordinal);
+    private IReadOnlyList<ObservedApp> _apps = Array.Empty<ObservedApp>();
+    private IReadOnlyList<HeadsUp> _headsUps = Array.Empty<HeadsUp>();
     private readonly List<CloseEvent> _recentClosures = new();
     private PendingScene? _scene;
     private long _sceneIds;
@@ -56,8 +69,12 @@ internal sealed class EnforcementController : IDisposable
         UsageStore? usageStore = null,
         PauseStore? pauseStore = null,
         ActivityStore? activityStore = null,
-        RuleBaselineStore? ruleBaseline = null)
+        RuleBaselineStore? ruleBaseline = null,
+        IAppObserver? appObserver = null,
+        IAppCloser? appCloser = null)
     {
+        _appObserver = appObserver;
+        _appCloser = appCloser;
         _ruleBaseline = ruleBaseline ?? new RuleBaselineStore();
         ArgumentNullException.ThrowIfNull(configuration);
         _observer = observer ?? throw new ArgumentNullException(nameof(observer));
@@ -136,6 +153,21 @@ internal sealed class EnforcementController : IDisposable
     {
         SetPause(null);
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, _engine.GetRuleSnapshots(DateTimeOffset.Now), Status.LastError));
+    }
+
+    /// <summary>
+    /// Apps marked as okay (by <see cref="AppIdentity.Key"/>): like okay sites, their time
+    /// is recorded only as the one shared total.
+    /// </summary>
+    public void SetUntrackedApps(IEnumerable<string> keys)
+    {
+        lock (_sync)
+        {
+            _activity.SetUntrackedApps(keys);
+        }
+
+        PersistActivity(DateTimeOffset.Now);
+        Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, Status.Rules, Status.LastError));
     }
 
     public EditableConfiguration GetEditableConfiguration() =>
@@ -250,6 +282,7 @@ internal sealed class EnforcementController : IDisposable
         }
 
         _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        ClearHeadsUps();
         PersistUsage();
         PersistActivity(DateTimeOffset.Now);
         Publish(BuildStatus(DateTimeOffset.Now, Status.Windows, Status.Rules, Status.LastError));
@@ -278,24 +311,35 @@ internal sealed class EnforcementController : IDisposable
             }
 
             IReadOnlyList<ObservedBrowserWindow> windows;
+            IReadOnlyList<ObservedApp> apps;
             TickResult result;
             lock (_browserLock)
             {
                 windows = _observer.GetSelectedTabs();
+                apps = _appObserver?.GetApps() ?? Array.Empty<ObservedApp>();
                 WriteLog(now, $"observed {windows.Count} window(s): {string.Join(" || ", windows.Select(Describe))}");
 
                 // While paused the engine still ticks (so hours roll over and the
-                // clock stays current) but sees no tabs: nothing is charged or closed.
+                // clock stays current) but sees no tabs or apps: nothing is charged or closed.
+                PauseState? paused = CurrentPause(now);
+                List<ObservedApp> counting = apps.Where(a => a.Counts).ToList();
                 result = _engine.Tick(
-                    IsPaused(now)
+                    paused is not null
                         ? Array.Empty<BrowserWindowState>()
                         : windows.Select(w => new BrowserWindowState(w.WindowId, w.Url)).ToArray(),
+                    paused is not null ? Array.Empty<AppIdentity>() : counting.Select(a => a.Identity).ToArray(),
                     now);
 
-                HandleCloseDecisions(now, windows, result.CloseDecisions);
+                IReadOnlyList<AppTarget> dueApps = DueApps(now, counting, result, paused);
+                lock (_sync)
+                {
+                    _apps = apps;
+                }
+
+                HandleCloseDecisions(now, windows, result.CloseDecisions, dueApps);
             }
 
-            RecordActivity(now, windows);
+            RecordActivity(now, windows, apps);
 
             // Only an active (charged) tick changes the numbers, so persist then —
             // not every idle second. The hour's usage thus survives a later restart.
@@ -308,6 +352,7 @@ internal sealed class EnforcementController : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
+            ClearHeadsUps();
             Publish(BuildStatus(DateTimeOffset.Now, Array.Empty<ObservedBrowserWindow>(), _engine.GetRuleSnapshots(DateTimeOffset.Now), ex.Message));
             WriteLog(DateTimeOffset.Now, $"error {ex}");
             _timer.Change(ErrorBackoff, PollInterval);
@@ -327,7 +372,7 @@ internal sealed class EnforcementController : IDisposable
     /// decisions wait; the engine repeats them every tick for as long as a blocked page
     /// stays open, so a tab still open after the scene starts the next one.
     /// </summary>
-    private void HandleCloseDecisions(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows, IReadOnlyList<CloseDecision> decisions)
+    private void HandleCloseDecisions(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows, IReadOnlyList<CloseDecision> decisions, IReadOnlyList<AppTarget> apps)
     {
         PendingScene? overdue = null;
         lock (_sync)
@@ -350,6 +395,7 @@ internal sealed class EnforcementController : IDisposable
         {
             WriteLog(now, $"scene {overdue.Id} never reached its pop; closing now");
             CloseIfStillBlocked(now, overdue.Targets);
+            CloseAppsIfStillBlocked(overdue.Apps);
         }
 
         var targets = decisions
@@ -357,7 +403,7 @@ internal sealed class EnforcementController : IDisposable
             .Where(t => t.Window is not null)
             .Select(t => new SceneTarget(t.Window!, t.Decision))
             .ToList();
-        if (targets.Count == 0)
+        if (targets.Count == 0 && apps.Count == 0)
         {
             return;
         }
@@ -369,6 +415,7 @@ internal sealed class EnforcementController : IDisposable
                 Close(now, target);
             }
 
+            CloseAppsIfStillBlocked(apps);
             return;
         }
 
@@ -380,12 +427,117 @@ internal sealed class EnforcementController : IDisposable
                 return;
             }
 
-            started = new PendingScene(++_sceneIds, now, targets);
+            started = new PendingScene(++_sceneIds, now, targets, apps);
             _scene = started;
         }
 
-        WriteLog(now, $"scene {started.Id} starts for {string.Join(", ", targets.Select(t => $"{t.Window.BrowserName}:{t.Window.WindowId}:{t.Decision.RuleId}"))}");
-        BlockSceneStarting.Invoke(this, new BlockScene(started.Id, targets.Select(t => t.Window).ToArray()));
+        WriteLog(now, $"scene {started.Id} starts for {string.Join(", ", targets.Select(t => $"{t.Window.BrowserName}:{t.Window.WindowId}:{t.Decision.RuleId}").Concat(apps.Select(a => $"{a.App.Identity.Key}:{a.RuleId}")))}");
+        BlockSceneStarting.Invoke(this, new BlockScene(
+            started.Id,
+            targets.Select(t => t.Window.WindowHandle).Concat(apps.SelectMany(a => a.App.Windows.Take(1))).ToArray()));
+    }
+
+    /// <summary>
+    /// The apps to close now, and the heads-up for those a block reaches within a minute
+    /// (<see cref="BlockCountdown"/> decides). While paused nothing is coming, except a
+    /// block the pause ends into within the minute.
+    /// </summary>
+    private IReadOnlyList<AppTarget> DueApps(DateTimeOffset now, IReadOnlyList<ObservedApp> counting, TickResult result, PauseState? pause)
+    {
+        var apps = new List<CountingApp>();
+        foreach (ObservedApp app in counting)
+        {
+            string key = app.Identity.Key;
+            BlockAhead? ahead = pause is null
+                ? _engine.BlockAheadFor(app.Identity, now, BlockCountdown.Lead, counting: true)
+                : pause.UntilUtc - now <= BlockCountdown.Lead
+                    ? _engine.BlockAheadFor(app.Identity, pause.UntilUtc, TimeSpan.Zero, counting: false)
+                    : null;
+            bool held = (_appRefusedUntil.TryGetValue(key, out DateTimeOffset refused) && refused > now) || _appsClosing.Contains(key);
+            apps.Add(new CountingApp(app.Identity, ahead, held));
+        }
+
+        CountdownResult countdown = _countdown.Tick(apps, now);
+        var headsUps = new List<HeadsUp>();
+        foreach (AppWarning warning in countdown.Warn)
+        {
+            if (!_headsUps.Any(h => h.App == warning.App.Name))
+            {
+                WriteLog(now, $"heads-up {warning.App.Key}:{warning.RuleId} closes at {warning.At:HH:mm:ss}");
+            }
+
+            string rule = result.Rules.FirstOrDefault(r => r.RuleId == warning.RuleId)?.Name ?? "";
+            IntPtr window = counting.First(a => a.Identity.Key == warning.App.Key).Windows.FirstOrDefault();
+            headsUps.Add(new HeadsUp(warning.App.Name, warning.At, rule, window));
+        }
+
+        lock (_sync)
+        {
+            _headsUps = headsUps;
+        }
+
+        return countdown.Close
+            .Select(c => new AppTarget(counting.First(a => a.Identity.Key == c.App.Key), c.RuleId))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Closes the apps a scene was started for, each only if it still counts and is still
+    /// blocked; one that's gone or allowed by now is left alone. Runs off the tick: a
+    /// close may wait a few seconds for an app to go.
+    /// </summary>
+    private void CloseAppsIfStillBlocked(IReadOnlyList<AppTarget> targets)
+    {
+        if (targets.Count == 0 || _appCloser is not { } closer || _appObserver is not { } observer)
+        {
+            return;
+        }
+
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                List<ObservedApp> closing;
+                DateTimeOffset now = DateTimeOffset.Now;
+                var keys = targets.Select(t => t.App.Identity.Key).ToHashSet(StringComparer.Ordinal);
+                lock (_browserLock)
+                {
+                    closing = IsPaused(now)
+                        ? new List<ObservedApp>()
+                        : observer.GetApps()
+                            .Where(a => keys.Contains(a.Identity.Key) && !_appsClosing.Contains(a.Identity.Key)
+                                && a.Counts && _engine.BlockingRuleFor(a.Identity, now) is not null)
+                            .ToList();
+                    _appsClosing.UnionWith(closing.Select(a => a.Identity.Key));
+                }
+
+                foreach (ObservedApp app in closing)
+                {
+                    AppCloseResult closed = AppCloseResult.Closed;
+                    try
+                    {
+                        closed = closer.Close(app);
+                    }
+                    finally
+                    {
+                        lock (_browserLock)
+                        {
+                            _appsClosing.Remove(app.Identity.Key);
+                            if (closed is AppCloseResult.Denied or AppCloseResult.NotClosed)
+                            {
+                                _appRefusedUntil[app.Identity.Key] = DateTimeOffset.Now + RetryRefused;
+                            }
+                        }
+                    }
+
+                    WriteLog(DateTimeOffset.Now, $"app {closed.ToString().ToLowerInvariant()} {app.Identity.Key}");
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                WriteLog(DateTimeOffset.Now, $"error closing apps {ex}");
+            }
+        });
     }
 
     /// <summary>
@@ -408,6 +560,7 @@ internal sealed class EnforcementController : IDisposable
         if (scene is not null)
         {
             ThreadPool.QueueUserWorkItem(_ => CloseIfStillBlocked(DateTimeOffset.Now, scene.Targets));
+            CloseAppsIfStillBlocked(scene.Apps);
         }
     }
 
@@ -479,13 +632,16 @@ internal sealed class EnforcementController : IDisposable
 
     private sealed record SceneTarget(ObservedBrowserWindow Window, CloseDecision Decision);
 
+    private sealed record AppTarget(ObservedApp App, string RuleId);
+
     private sealed class PendingScene
     {
-        public PendingScene(long id, DateTimeOffset startedAt, IReadOnlyList<SceneTarget> targets)
+        public PendingScene(long id, DateTimeOffset startedAt, IReadOnlyList<SceneTarget> targets, IReadOnlyList<AppTarget> apps)
         {
             Id = id;
             StartedAt = startedAt;
             Targets = targets;
+            Apps = apps;
         }
 
         public long Id { get; }
@@ -493,6 +649,8 @@ internal sealed class EnforcementController : IDisposable
         public DateTimeOffset StartedAt { get; }
 
         public IReadOnlyList<SceneTarget> Targets { get; }
+
+        public IReadOnlyList<AppTarget> Apps { get; }
 
         public bool PopReached { get; set; }
     }
@@ -515,7 +673,26 @@ internal sealed class EnforcementController : IDisposable
                 _strictModeStore.GetSnapshot(),
                 _pause,
                 lastError,
-                _activity.Snapshot());
+                _activity.Snapshot(),
+                _apps,
+                _headsUps);
+        }
+    }
+
+    /// <summary>No heads-up stays on screen while nothing counts it down.</summary>
+    private void ClearHeadsUps()
+    {
+        lock (_sync)
+        {
+            _headsUps = Array.Empty<HeadsUp>();
+        }
+    }
+
+    private PauseState? CurrentPause(DateTimeOffset now)
+    {
+        lock (_sync)
+        {
+            return _pause?.IsActiveAt(now) == true ? _pause : null;
         }
     }
 
@@ -540,18 +717,19 @@ internal sealed class EnforcementController : IDisposable
     private void PersistUsage() => _usageStore.Save(_engine.ExportUsage());
 
     /// <summary>
-    /// Counts the page in front toward today's statistics — also while paused, since
-    /// they describe what you did, not what was enforced — and stores them now and then.
+    /// Counts the page or app in front toward today's statistics — also while paused,
+    /// since they describe what you did, not what was enforced — and stores them now and then.
     /// A private window is never counted: Status is a diary, and private browsing
     /// is the user saying this visit did not happen. Blocking still sees that window.
     /// </summary>
-    private void RecordActivity(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows)
+    private void RecordActivity(DateTimeOffset now, IReadOnlyList<ObservedBrowserWindow> windows, IReadOnlyList<ObservedApp> apps)
     {
         ObservedBrowserWindow? front = windows.FirstOrDefault(w => w.IsForeground);
         Uri? url = front is { IsPrivate: false } ? front.Url : null;
+        AppIdentity? app = front is null ? apps.FirstOrDefault(a => a.IsForeground)?.Identity : null;
         lock (_sync)
         {
-            _activity.Tick(url, now);
+            _activity.Tick(url, app, now);
             if (_pause?.IsActiveAt(now) == true)
             {
                 _activity.MarkPaused(now);

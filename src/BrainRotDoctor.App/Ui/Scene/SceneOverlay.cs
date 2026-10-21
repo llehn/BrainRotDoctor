@@ -29,8 +29,7 @@ internal sealed class SceneOverlay
     private readonly PixelPoint? _near;
     private readonly Stopwatch _clock = new();
     private readonly Drawing _drawing;
-    private IntPtr _window, _screenDc, _memoryDc, _dib, _previousBitmap, _bits;
-    private SKBitmap? _pixels;
+    private LayeredSurface? _surface;
     private NativeMethods.POINT _position;
     private NativeMethods.SIZE _size;
     private double _scaling = 1;
@@ -65,7 +64,7 @@ internal sealed class SceneOverlay
 
     private double _lastFrame;
 
-    public IntPtr Handle => _window;
+    public IntPtr Handle => _surface?.Handle ?? IntPtr.Zero;
 
     public NativeMethods.POINT Position => _position;
 #endif
@@ -74,22 +73,10 @@ internal sealed class SceneOverlay
     public void Start()
     {
         PlaceInCorner();
-        _window = NativeMethods.CreateWindowEx(
-            (int)(NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOOLWINDOW
-                | NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOPMOST),
-            "Static", null, NativeMethods.WS_POPUP,
-            _position.X, _position.Y, _size.Width, _size.Height,
-            IntPtr.Zero, IntPtr.Zero, NativeMethods.GetModuleHandle(IntPtr.Zero), IntPtr.Zero);
-        if (_window == IntPtr.Zero)
-        {
-            throw new InvalidOperationException("The scene overlay could not be created.");
-        }
-
-        CreateSurface();
+        _surface = new LayeredSurface(_position.X, _position.Y, _size.Width, _size.Height);
         NativeMethods.timeBeginPeriod(1);
         _clock.Start();
         ShowFrame(0);
-        NativeMethods.ShowWindow(_window, NativeMethods.SW_SHOWNOACTIVATE);
 
         // A steady 60-frames-a-second beat from a background thread; each beat asks the
         // UI thread for one frame, and is skipped while the previous one is still drawing.
@@ -169,7 +156,8 @@ internal sealed class SceneOverlay
 
         _finished = true;
         NativeMethods.timeEndPeriod(1);
-        ReleaseSurface();
+        _surface?.Dispose();
+        _surface = null;
 
         // Never leave a tab open because the scene ended early.
         if (!_popped)
@@ -184,23 +172,16 @@ internal sealed class SceneOverlay
     /// <summary>Paints the scene at time <paramref name="t"/> and hands the pixels to Windows.</summary>
     private void ShowFrame(double t)
     {
-        _pixels!.Erase(SKColors.Transparent);
-        using (var canvas = new SKCanvas(_pixels))
+        LayeredSurface surface = _surface!;
+        surface.Pixels.Erase(SKColors.Transparent);
+        using (var canvas = new SKCanvas(surface.Pixels))
         {
             _drawing.Time = t;
             var dpi = new Vector(96 * _scaling, 96 * _scaling);
             Avalonia.Skia.Helpers.DrawingContextHelper.RenderAsync(canvas, _drawing, new Rect(0, 0, _size.Width, _size.Height), dpi).Wait();
         }
 
-        NativeMethods.GdiFlush();
-        var source = default(NativeMethods.POINT);
-        var blend = new NativeMethods.BLENDFUNCTION
-        {
-            BlendOp = NativeMethods.AC_SRC_OVER,
-            SourceConstantAlpha = 255,
-            AlphaFormat = NativeMethods.AC_SRC_ALPHA,
-        };
-        NativeMethods.UpdateLayeredWindow(_window, _screenDc, ref _position, ref _size, _memoryDc, ref source, 0, ref blend, NativeMethods.ULW_ALPHA);
+        surface.Show();
     }
 
     /// <summary>
@@ -225,60 +206,6 @@ internal sealed class SceneOverlay
             Height = (int)Math.Ceiling(SceneView.Height * _scaling),
         };
         _position = new NativeMethods.POINT { X = info.Monitor.Right - _size.Width, Y = info.Monitor.Bottom - _size.Height };
-    }
-
-    /// <summary>A pixel buffer Windows can take directly (top-down, premultiplied BGRA), which the painter draws into.</summary>
-    private void CreateSurface()
-    {
-        _screenDc = NativeMethods.GetDC(IntPtr.Zero);
-        _memoryDc = NativeMethods.CreateCompatibleDC(_screenDc);
-        var header = new NativeMethods.BITMAPINFOHEADER
-        {
-            Size = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.BITMAPINFOHEADER>(),
-            Width = _size.Width,
-            Height = -_size.Height,
-            Planes = 1,
-            BitCount = 32,
-        };
-        _dib = NativeMethods.CreateDIBSection(_memoryDc, ref header, 0, out _bits, IntPtr.Zero, 0);
-        if (_dib == IntPtr.Zero)
-        {
-            throw new InvalidOperationException("The scene overlay's pixels could not be allocated.");
-        }
-
-        _previousBitmap = NativeMethods.SelectObject(_memoryDc, _dib);
-        _pixels = new SKBitmap();
-        _pixels.InstallPixels(new SKImageInfo(_size.Width, _size.Height, SKColorType.Bgra8888, SKAlphaType.Premul), _bits, _size.Width * 4);
-    }
-
-    private void ReleaseSurface()
-    {
-        if (_window != IntPtr.Zero)
-        {
-            NativeMethods.DestroyWindow(_window);
-            _window = IntPtr.Zero;
-        }
-
-        _pixels?.Dispose();
-        _pixels = null;
-        if (_memoryDc != IntPtr.Zero)
-        {
-            NativeMethods.SelectObject(_memoryDc, _previousBitmap);
-            NativeMethods.DeleteDC(_memoryDc);
-            _memoryDc = IntPtr.Zero;
-        }
-
-        if (_dib != IntPtr.Zero)
-        {
-            NativeMethods.DeleteObject(_dib);
-            _dib = IntPtr.Zero;
-        }
-
-        if (_screenDc != IntPtr.Zero)
-        {
-            NativeMethods.ReleaseDC(IntPtr.Zero, _screenDc);
-            _screenDc = IntPtr.Zero;
-        }
     }
 
     /// <summary>The scene as a visual, so Avalonia's painter can draw it onto the overlay's pixels.</summary>

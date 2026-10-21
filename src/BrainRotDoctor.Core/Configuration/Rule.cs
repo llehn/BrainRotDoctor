@@ -1,3 +1,5 @@
+using BrainRotDoctor.Core.Apps;
+
 namespace BrainRotDoctor.Core.Configuration;
 
 /// <summary>
@@ -27,12 +29,13 @@ public sealed class Rule
 
     /// <param name="id">Stable identifier for the rule.</param>
     /// <param name="name">Human-readable name for display.</param>
-    /// <param name="sites">The sites this rule blocks. Must be non-empty.</param>
+    /// <param name="sites">The sites this rule blocks.</param>
     /// <param name="allowance">Allowed time per hour, or null to block completely.</param>
     /// <param name="allDay">True if the rule is active all day; otherwise the window <paramref name="from"/>–<paramref name="to"/> applies.</param>
     /// <param name="from">Start of the active window (local), used when not all day.</param>
     /// <param name="to">End of the active window (local), used when not all day; earlier than <paramref name="from"/> wraps past midnight.</param>
     /// <param name="days">Days the rule applies on. Null or empty means every day.</param>
+    /// <param name="apps">The apps this rule blocks. A rule needs at least one site or app.</param>
     public Rule(
         string id,
         string name,
@@ -41,7 +44,8 @@ public sealed class Rule
         bool allDay,
         TimeOnly from,
         TimeOnly to,
-        IReadOnlyCollection<DayOfWeek>? days)
+        IReadOnlyCollection<DayOfWeek>? days,
+        IReadOnlyList<TargetApp>? apps = null)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
@@ -49,9 +53,9 @@ public sealed class Rule
         }
 
         ArgumentNullException.ThrowIfNull(sites);
-        if (sites.Count == 0)
+        if (sites.Count == 0 && apps is not { Count: > 0 })
         {
-            throw new ConfigurationException($"Rule '{id}' must block at least one site.");
+            throw new ConfigurationException($"Rule '{id}' must block at least one site or app.");
         }
 
         if (allowance is { } a && (a <= TimeSpan.Zero || a >= AllowancePeriod))
@@ -69,6 +73,7 @@ public sealed class Rule
         Id = id;
         Name = string.IsNullOrWhiteSpace(name) ? id : name;
         Sites = sites.ToArray();
+        Apps = apps?.ToArray() ?? Array.Empty<TargetApp>();
         Allowance = allowance;
         AllDay = allDay;
         From = from;
@@ -83,6 +88,8 @@ public sealed class Rule
     public string Name { get; }
 
     public IReadOnlyList<TargetSite> Sites { get; }
+
+    public IReadOnlyList<TargetApp> Apps { get; }
 
     /// <summary>Allowed time per hour, or null when the rule blocks completely.</summary>
     public TimeSpan? Allowance { get; }
@@ -101,6 +108,32 @@ public sealed class Rule
 
     /// <summary>True if one of the rule's sites blocks <paramref name="uri"/>.</summary>
     public bool MatchesUrl(Uri uri) => Sites.Any(s => s.Blocks(uri));
+
+    /// <summary>True if one of the rule's apps is <paramref name="app"/>.</summary>
+    public bool MatchesApp(AppIdentity app) => Apps.Any(a => a.Matches(app));
+
+    /// <summary>
+    /// The first moment after <paramref name="now"/>, at most <paramref name="within"/>
+    /// later and to the second, when the rule is in effect; null when it isn't in that
+    /// time or is in effect already.
+    /// </summary>
+    public DateTimeOffset? StartsWithin(DateTimeOffset now, TimeSpan within)
+    {
+        if (IsActiveAt(now))
+        {
+            return null;
+        }
+
+        for (TimeSpan step = TimeSpan.FromSeconds(1); step <= within; step += TimeSpan.FromSeconds(1))
+        {
+            if (IsActiveAt(now + step))
+            {
+                return now + step;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>True if the rule is in effect at <paramref name="now"/>.</summary>
     public bool IsActiveAt(DateTimeOffset now)

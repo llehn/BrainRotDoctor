@@ -57,6 +57,29 @@ internal static class Program
             return;
         }
 
+        if (HasFlag(args, "--list-apps"))
+        {
+            foreach (ObservedApp app in new WindowsAppObserver().GetApps())
+            {
+                Console.WriteLine($"{app.Identity.Key} | {app.Identity.Name} | {app.Identity.Description} | windows {app.Windows.Count} | on screen {app.OnScreen} | front {app.IsForeground} | counts {app.Counts}");
+            }
+
+            return;
+        }
+
+        if (TryGetOption(args, "--close-app", "--close-app") is { } closeKey)
+        {
+            ObservedApp? found = new WindowsAppObserver().GetApps().FirstOrDefault(a => a.Identity.Key == closeKey);
+            Console.WriteLine(found is null ? $"{closeKey} not found" : $"{closeKey}: {new AppCloser().Close(found)}");
+            return;
+        }
+
+        if (TryGetOption(args, "--heads-up-preview", "--heads-up-preview") is { } headsUpApp)
+        {
+            Ui.Scene.HeadsUpOverlay.Preview(headsUpApp, args);
+            return;
+        }
+
         if (HasFlag(args, "--scene-preview"))
         {
             Ui.Scene.SceneFrames.Preview(int.TryParse(TryGetOption(args, "--scene-preview", "--scene-preview"), out int times) ? times : 1, args);
@@ -150,8 +173,11 @@ internal static class Program
             loaded.Json,
             loaded.FilePath,
             strictModeStore,
-            TryGetOption(args, "--log", "-l"));
+            TryGetOption(args, "--log", "-l"),
+            appObserver: new WindowsAppObserver(),
+            appCloser: new AppCloser());
         controller.SetUntrackedSites(uiSettings.LoadUntrackedSites());
+        controller.SetUntrackedApps(uiSettings.LoadUntrackedApps().Keys);
 
         NativeLibraryReady.Wait();
         controller.Start();

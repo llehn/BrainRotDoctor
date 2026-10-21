@@ -26,6 +26,11 @@ namespace BrainRotDoctor.Core.Configuration;
 ///               "query": { "variant": "following" }, "action": "allow" }
 ///           ]
 ///         }
+///       ],
+///       "apps": [                       // optional; a rule needs a site or an app
+///         { "kind": "steam-games" },
+///         { "kind": "steam-game", "label": "Valheim", "folder": "Valheim" },
+///         { "kind": "program", "label": "Discord", "exe": "discord.exe", "description": "Discord" }
 ///       ]
 ///     }
 ///   ]
@@ -90,6 +95,46 @@ public sealed class RuleDocument
     public string? To { get; set; }
     public List<string>? Days { get; set; }
     public List<SiteDocument>? Sites { get; set; }
+    public List<AppDocument>? Apps { get; set; }
+}
+
+public sealed class AppDocument
+{
+    public const string Program = "program";
+    public const string SteamGame = "steam-game";
+    public const string AllSteamGames = "steam-games";
+    public const string Steam = "steam";
+
+    /// <summary>"program", "steam-game", "steam-games" or "steam".</summary>
+    public string? Kind { get; set; }
+
+    public string? Label { get; set; }
+
+    /// <summary>A program's file name ("discord.exe").</summary>
+    public string? Exe { get; set; }
+
+    /// <summary>A program's file description, which a renamed file keeps.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>A Steam game's folder under "steamapps\common".</summary>
+    public string? Folder { get; set; }
+
+    public static string KindText(TargetAppKind kind) => kind switch
+    {
+        TargetAppKind.SteamGame => SteamGame,
+        TargetAppKind.AllSteamGames => AllSteamGames,
+        TargetAppKind.Steam => Steam,
+        _ => Program,
+    };
+
+    public static TargetAppKind ParseKind(string? text) => text?.Trim().ToLowerInvariant() switch
+    {
+        SteamGame => TargetAppKind.SteamGame,
+        AllSteamGames => TargetAppKind.AllSteamGames,
+        Steam => TargetAppKind.Steam,
+        null or "" or Program => TargetAppKind.Program,
+        _ => throw new ConfigurationException($"Unknown app kind '{text}'. Use program, steam-game, steam-games or steam."),
+    };
 }
 
 public sealed class SiteDocument

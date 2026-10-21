@@ -1,3 +1,5 @@
+using BrainRotDoctor.Core.Apps;
+
 namespace BrainRotDoctor.Core.Activity;
 
 /// <summary>
@@ -21,6 +23,9 @@ public sealed record ActivitySite(string Host, TimeSpan Time, IReadOnlyList<Acti
     public bool IsSplit => Places.Count > 1 || (Places.Count == 1 && Places[0].Path.Length > 0);
 }
 
+/// <summary>One app's day: its time today.</summary>
+public sealed record ActivityApp(string Key, AppIdentity App, TimeSpan Time);
+
 /// <summary>
 /// Today's statistics turned into what the status view shows: sites sorted by
 /// time, each split into the places that hold its time. Nothing is judged:
@@ -39,9 +44,10 @@ public sealed class ActivityReport
     public static readonly TimeSpan SplitMinimum = TimeSpan.FromMinutes(2);
     public const double SplitShare = 0.25;
 
-    private ActivityReport(IReadOnlyList<ActivitySite> sites, TimeSpan total, TimeSpan okay)
+    private ActivityReport(IReadOnlyList<ActivitySite> sites, IReadOnlyList<ActivityApp> apps, TimeSpan total, TimeSpan okay)
     {
         Sites = sites;
+        Apps = apps;
         Total = total;
         Okay = okay;
     }
@@ -49,7 +55,10 @@ public sealed class ActivityReport
     /// <summary>Sites with at least <see cref="SiteMinimum"/> today, longest first.</summary>
     public IReadOnlyList<ActivitySite> Sites { get; }
 
-    /// <summary>All time with a web page of a tracked site in front today.</summary>
+    /// <summary>Apps with at least <see cref="SiteMinimum"/> today, longest first.</summary>
+    public IReadOnlyList<ActivityApp> Apps { get; }
+
+    /// <summary>All time with a page of a tracked site or a tracked app in front today.</summary>
     public TimeSpan Total { get; }
 
     /// <summary>Time on the sites you marked as okay, as one amount.</summary>
@@ -85,7 +94,21 @@ public sealed class ActivityReport
             }
         }
 
-        return new ActivityReport(sites.OrderByDescending(s => s.Time).ToList(), all, TimeSpan.FromSeconds(record.OkaySeconds));
+        var apps = new List<ActivityApp>();
+        foreach ((string key, AppTotal total) in record.Apps)
+        {
+            all += total.Time;
+            if (total.Time >= SiteMinimum && total.App is { } app)
+            {
+                apps.Add(new ActivityApp(key, app, total.Time));
+            }
+        }
+
+        return new ActivityReport(
+            sites.OrderByDescending(s => s.Time).ToList(),
+            apps.OrderByDescending(a => a.Time).ToList(),
+            all,
+            TimeSpan.FromSeconds(record.OkaySeconds));
     }
 
     private static IReadOnlyList<ActivityPlace> Split(string host, TimeSpan siteTime, Dictionary<string, List<(string Key, TimeSpan Time)>> children)

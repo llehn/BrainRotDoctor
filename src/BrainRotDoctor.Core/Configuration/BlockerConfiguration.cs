@@ -1,3 +1,5 @@
+using BrainRotDoctor.Core.Apps;
+
 namespace BrainRotDoctor.Core.Configuration;
 
 /// <summary>
@@ -32,6 +34,19 @@ public sealed class BlockerConfiguration
         foreach (Rule rule in Rules)
         {
             if (rule.MatchesUrl(uri))
+            {
+                yield return rule;
+            }
+        }
+    }
+
+    /// <summary>Returns every rule that blocks the given app.</summary>
+    public IEnumerable<Rule> MatchingRules(AppIdentity app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        foreach (Rule rule in Rules)
+        {
+            if (rule.MatchesApp(app))
             {
                 yield return rule;
             }

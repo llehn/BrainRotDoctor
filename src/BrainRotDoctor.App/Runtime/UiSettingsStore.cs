@@ -81,6 +81,16 @@ internal sealed class UiSettingsStore
         Write(state);
     }
 
+    /// <summary>Apps marked okay: their key and the name to list them by.</summary>
+    public Dictionary<string, string> LoadUntrackedApps() => new(Read().UntrackedApps ?? new(), StringComparer.Ordinal);
+
+    public void SaveUntrackedApps(IReadOnlyDictionary<string, string> apps)
+    {
+        State state = Read();
+        state.UntrackedApps = apps.ToDictionary(a => a.Key, a => a.Value, StringComparer.Ordinal);
+        Write(state);
+    }
+
     private State Read()
     {
         try
@@ -113,6 +123,7 @@ internal sealed class UiSettingsStore
         public string Theme { get; set; } = nameof(ThemePreference.System);
         public string Language { get; set; } = "auto";
         public List<string>? UntrackedSites { get; set; }
+        public Dictionary<string, string>? UntrackedApps { get; set; }
         public bool ShowEverything { get; set; }
     }
 }

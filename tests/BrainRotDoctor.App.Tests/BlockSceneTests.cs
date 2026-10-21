@@ -39,7 +39,7 @@ public sealed class BlockSceneTests
         Assert.Empty(browsers.Closed);
 
         BlockScene started = Assert.Single(scenes);
-        Assert.Equal(browsers.Handle, Assert.Single(started.Windows).WindowHandle);
+        Assert.Equal(browsers.Handle, Assert.Single(started.Windows));
 
         controller.ClosePendingTabs(started.Id);
         Assert.True(Until(() => !browsers.Closed.IsEmpty));

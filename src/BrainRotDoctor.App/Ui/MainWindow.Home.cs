@@ -95,7 +95,12 @@ internal sealed partial class MainWindow
             sites.Children.Add(new InfoChip(SiteLook.Monogram(site.CatalogId, site.DisplayLabel, 18), site.DisplayLabel, BlockedSummary(site)));
         }
 
-        if (rule.Sites.Count == 0)
+        foreach (EditableConfiguration.EditableApp app in rule.Apps)
+        {
+            sites.Children.Add(new InfoChip(AppMark(app, 18), AppLabel(app)));
+        }
+
+        if (rule.Sites.Count == 0 && rule.Apps.Count == 0)
         {
             sites.Children.Add(new TextLine(Loc.T("no_sites"), TextStyle.Caption));
         }

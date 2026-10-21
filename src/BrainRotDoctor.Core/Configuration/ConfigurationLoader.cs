@@ -52,6 +52,7 @@ public static class ConfigurationLoader
         }
 
         var sites = SiteMigration.Migrate(dto.Sites, dto.Id).Select(MapSite).ToList();
+        var apps = (dto.Apps ?? new()).Select(MapApp).ToList();
 
         TimeSpan? allowance = dto.AllowanceMinutes is { } minutes
             ? TimeSpan.FromMinutes(minutes)
@@ -67,7 +68,15 @@ public static class ConfigurationLoader
             allDay,
             ParseTime(dto.From, dto.Id, "from"),
             ParseTime(dto.To, dto.Id, "to"),
-            ParseDays(dto.Days, dto.Id));
+            ParseDays(dto.Days, dto.Id),
+            apps);
+    }
+
+    /// <summary>Validates one app of a rule.</summary>
+    public static TargetApp MapApp(AppDocument app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return new TargetApp(AppDocument.ParseKind(app.Kind), app.Label ?? "", app.Exe, app.Description, app.Folder);
     }
 
     /// <summary>Validates one site in the current (page-based) format.</summary>

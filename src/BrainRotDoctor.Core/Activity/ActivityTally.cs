@@ -1,3 +1,5 @@
+using BrainRotDoctor.Core.Apps;
+
 namespace BrainRotDoctor.Core.Activity;
 
 /// <summary>Today's totals for one place: how long it was in front, and how often you came to it.</summary>
@@ -6,6 +8,19 @@ public sealed class PlaceTotal
     public double Seconds { get; set; }
 
     public int Visits { get; set; }
+
+    public TimeSpan Time => TimeSpan.FromSeconds(Seconds);
+}
+
+/// <summary>Today's total for one app: how long it was in front, how often you came to it, and what it is.</summary>
+public sealed class AppTotal
+{
+    public double Seconds { get; set; }
+
+    public int Visits { get; set; }
+
+    /// <summary>Which app (its name and how it's recognized), so it can be shown and blocked when it isn't running.</summary>
+    public AppIdentity? App { get; set; }
 
     public TimeSpan Time => TimeSpan.FromSeconds(Seconds);
 }
@@ -22,7 +37,10 @@ public sealed class ActivityRecord
 
     public Dictionary<string, PlaceTotal> Places { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>Time on sites you marked as okay, all of them together: no site is told apart.</summary>
+    /// <summary>Totals per app, by <see cref="AppIdentity.Key"/>.</summary>
+    public Dictionary<string, AppTotal> Apps { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Time on sites and apps you marked as okay, all of them together: none is told apart.</summary>
     public double OkaySeconds { get; set; }
 
     /// <summary>Blocking was paused at some point today.</summary>
@@ -35,6 +53,7 @@ public sealed class ActivityRecord
     {
         Day = Day,
         Places = Places.ToDictionary(p => p.Key, p => new PlaceTotal { Seconds = p.Value.Seconds, Visits = p.Value.Visits }, StringComparer.Ordinal),
+        Apps = Apps.ToDictionary(a => a.Key, a => new AppTotal { Seconds = a.Value.Seconds, Visits = a.Value.Visits, App = a.Value.App }, StringComparer.Ordinal),
         OkaySeconds = OkaySeconds,
         PausedToday = PausedToday,
         StrictToday = StrictToday,
@@ -42,10 +61,10 @@ public sealed class ActivityRecord
 }
 
 /// <summary>
-/// Counts where today's browser time goes. Every tick, the page in front (the
-/// selected tab of the browser window you're using, if any) charges the elapsed
-/// time to each of its places (<see cref="PlaceKey"/>); arriving at a place that
-/// wasn't in front the tick before counts as a visit. At local midnight the
+/// Counts where today's time goes. Every tick, what is in front — the page of the
+/// browser window you're using (charged to each of its places, <see cref="PlaceKey"/>)
+/// or the app you're using — is charged the elapsed time; arriving at a place or app
+/// that wasn't in front the tick before counts as a visit. At local midnight the
 /// totals start over. Like the budget engine it owns no clock: the caller passes
 /// the time, so it is fully testable.
 /// </summary>
@@ -60,6 +79,8 @@ public sealed class ActivityTally
     private ActivityRecord _record = new();
     private HashSet<string> _inFront = new(StringComparer.Ordinal);
     private HashSet<string> _untracked = new(StringComparer.Ordinal);
+    private HashSet<string> _untrackedApps = new(StringComparer.Ordinal);
+    private string? _appInFront;
     private DateTimeOffset? _lastTick;
 
     /// <summary>
@@ -81,7 +102,24 @@ public sealed class ActivityTally
         }
     }
 
-    public void Tick(Uri? front, DateTimeOffset now)
+    /// <summary>
+    /// Apps (by <see cref="AppIdentity.Key"/>) you marked as okay: like okay sites, their
+    /// time joins the one shared total, what they had today included.
+    /// </summary>
+    public void SetUntrackedApps(IEnumerable<string> keys)
+    {
+        _untrackedApps = keys.ToHashSet(StringComparer.Ordinal);
+        foreach (string key in _record.Apps.Keys.Where(_untrackedApps.Contains).ToList())
+        {
+            _record.OkaySeconds += _record.Apps[key].Seconds;
+            _record.Apps.Remove(key);
+        }
+    }
+
+    public void Tick(Uri? front, DateTimeOffset now) => Tick(front, null, now);
+
+    /// <summary>Charges the page in front, or else the app in front (at most one of them is given).</summary>
+    public void Tick(Uri? front, AppIdentity? frontApp, DateTimeOffset now)
     {
         // The gap before a new day's first tick belongs to the day before.
         bool newDay = RollDay(now);
@@ -124,6 +162,30 @@ public sealed class ActivityTally
         }
 
         _inFront = inFront;
+
+        string? appKey = keys.Count == 0 ? frontApp?.Key : null;
+        if (appKey is not null && _untrackedApps.Contains(appKey))
+        {
+            _record.OkaySeconds += elapsed.TotalSeconds;
+            appKey = null;
+        }
+        else if (appKey is not null)
+        {
+            if (!_record.Apps.TryGetValue(appKey, out AppTotal? app))
+            {
+                app = new AppTotal();
+                _record.Apps[appKey] = app;
+            }
+
+            app.Seconds += elapsed.TotalSeconds;
+            app.App = frontApp;
+            if (_appInFront != appKey)
+            {
+                app.Visits++;
+            }
+        }
+
+        _appInFront = appKey;
     }
 
     public void MarkPaused(DateTimeOffset now)
@@ -148,6 +210,7 @@ public sealed class ActivityTally
         {
             _record = record.Copy();
             SetUntracked(_untracked);
+            SetUntrackedApps(_untrackedApps);
         }
         else
         {
@@ -167,6 +230,7 @@ public sealed class ActivityTally
 
         _record = new ActivityRecord { Day = day };
         _inFront.Clear();
+        _appInFront = null;
         return true;
     }
 }

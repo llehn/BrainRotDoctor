@@ -32,6 +32,15 @@ A rule blocks its sites whenever it is active and either set to block completely
 or out of allowance for the current hour. Several rules may target the same site;
 the site is blocked if any active rule blocks it.
 
+A rule can also hold **apps and games** (ADR-015): **all Steam games** (also ones
+installed later), **Steam** itself, one Steam game, or any other program (picked
+from what is open or was used today, or by its `.exe`). An app counts while a
+window of it is on screen, a Steam game while it runs at all. A blocked app is
+asked to close, as if its × were clicked, after the same worm scene. If it is
+still there a few seconds later, it is ended. Steam is only asked, so it goes
+to its tray. An app that was already open when a block came gets a one-minute
+heads-up in the screen corner, with a sound, so a game can be saved.
+
 The Windows enforcement app (`src/BrainRotDoctor.App`) is a modern **Avalonia**
 desktop app (light/dark theming) that observes selected tabs in supported
 browser windows through Windows UI Automation, accounts time against the rules,
@@ -42,7 +51,7 @@ animated scene plays in the screen corner (a doctor pulls a worm out of a brain)
 and the tab closes the moment the worm pops out, about three seconds in (ADR-012).
 
 The app opens on a **Status** view: a mirror of today, not a verdict. Every site
-is a tile whose size is its share of today's browser time, filling the window
+and every app is a tile whose size is its share of today's time, filling the window
 without scrolling; under each name, clock faces show the time itself (one per
 hour, the last one filling, stronger the more there is), with the exact time
 only on hover. Nothing is flagged: only the user decides what's a waste.
@@ -1185,6 +1194,89 @@ running" and quits.
   start is in progress.
 - The update stand-down is unchanged. A swap still cannot just stop the
   processes, because the partner starts a replacement.
+
+### ADR-015: Apps and Games Are Rule Targets Like Sites
+
+- **Status:** Accepted
+- **Date:** 2026-10-21
+- **Extends:** ADR-007 (what a rule holds), ADR-010 (what counts), ADR-012 (closing)
+
+#### Context
+
+Doom-scrolling is not the only pull. The owner wants to stop playing Steam games
+at night, and to see apps and games on Status next to websites. The rule model
+(what + when), strict mode, pause and Status must stay one model, not a second
+product for apps.
+
+#### Decision
+
+- **A rule holds sites and apps.** An app entry is *all Steam games*, *Steam*,
+  *one Steam game* (by its folder under `steamapps\common`) or *a program* (by its
+  file name or its file description, which a renamed copy keeps). A rule needs at
+  least one site or app. Strict mode, the hourly allowance, the active window,
+  pause and the rule guard apply unchanged.
+- **Recognized per process, never by title.** A program inside any
+  `steamapps\common` folder, on any drive, is that Steam game. Steam's own tools
+  there are not games. The Steam client and its web helper are Steam. Everything
+  else is a program. Steam's install records only give names. The Windows shell
+  (File Explorer included), shared runtimes (Java, Python, script hosts, consoles,
+  web view hosts), overlays, the browsers (their time is per site) and
+  BrainRotDoctor itself are never apps.
+- **What counts.** Like browser windows, an app counts while one of its windows is
+  shown, not minimized, and on the current virtual desktop. Click-through and fully
+  transparent windows (game and chat overlays) are ignored. Exception: a Steam game
+  counts while it runs with a window at all, minimized included. VR games keep their
+  desktop window minimized, and fullscreen games may minimize under an overlay.
+- **Closing.** The same worm scene plays. On its pop the app is asked to close by
+  every window of it, which is what its × does. If a window is still there five
+  seconds later, the processes owning those windows are ended, and only if they are
+  still the same processes (id and start time). Steam is only asked: ending it
+  would break the games it runs. No keystrokes are sent and focus is never taken.
+- **One minute's heads-up for an open app.** A block that can be foreseen (a rule
+  that blocks completely starting, an allowance running out while the app counts,
+  a pause ending into a block) is announced a minute ahead and closes on time. The allowance is never extended.
+  A block that can't be foreseen (a rule added or switched on, Resume) gives an app
+  that was running unblocked the same minute. An app that shows up while already
+  blocked closes at once, so starting it again buys no time. The heads-up is a panel
+  in the screen corner that never takes focus, with a sound at the start and at ten
+  seconds for a fullscreen game that hides it. Steam gets none: it only goes to its tray.
+- **Status.** Today's statistics hold time per app beside time per site: the app
+  in front, never a title or a timestamp, cleared at midnight. A private browser
+  window in front records nothing, not even the browser as an app.
+
+#### Rejected Alternatives
+
+**End the process at once.** Rejected: a game loses unsaved progress. Asking first
+and the minute's heads-up keep the commitment with less damage.
+
+**Recognize apps by window title.** Rejected: titles change and are localized.
+
+**Count every running process.** Rejected: what isn't on screen isn't being used
+(ADR-010). Steam games are the exception, for VR and fullscreen.
+
+**Prevent launching (process creation hooks, a driver).** Rejected for now: it needs
+administrator rights or a driver, and closing on sight matches how tabs work.
+
+**A separate rule type for apps.** Rejected: one rule with mixed contents is the
+AppBlock model (ADR-007). "No games and no YouTube at night" is one rule.
+
+#### Consequences
+
+- An app running with administrator rights can't be asked or ended by a normal
+  user's app. This is an open threat under ADR-001, not an accepted limit. Browsers
+  have the same gap today. A refused close is logged and retried a minute later.
+  An elevated helper would be its own decision (ADR-003, ADR-008).
+- A rule's allowance used up by a site while the game was off screen closes the game
+  without a heads-up. Accepted, since the allowance belongs to the rule.
+- "All Steam games" covers everything Steam installs into its games folders,
+  software sold on Steam included (OBS, Blender, Wallpaper Engine). Accepted: Steam
+  doesn't tell the two apart. Such a program can still be left out by not using
+  "All Steam games" and picking the games one by one.
+- A program is known by its file name. Its file description is used only to catch a
+  renamed copy, and never when many programs share it (a game engine's, a launcher's).
+  Two different programs with the same file name and description are not told apart.
+- An exclusive-fullscreen game may hide the scene and the heads-up. The sound still
+  plays, and the close still happens.
 
 ## Contributing, License, and Security
 

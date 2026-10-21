@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Platform.Storage;
 using BrainRotDoctor.App.Runtime;
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 using BrainRotDoctor.DesignSystem;
 
@@ -9,25 +11,39 @@ namespace BrainRotDoctor.App.Ui;
 
 internal sealed partial class MainWindow
 {
-    // ---------- Add websites (full window) ----------
+    // ---------- Add websites, apps and games (full window) ----------
+
+    /// <summary>Steam games shown before "Show all": the rest are a search away.</summary>
+    private const int GamesShown = 12;
 
     private readonly List<string> _pickedCatalog = new();
     private readonly List<EditableConfiguration.EditableSite> _pickedCustom = new();
+    private readonly List<EditableConfiguration.EditableApp> _pickedApps = new();
     private string _siteQuery = "";
+    private string _appQuery = "";
     private string _customAddress = "";
     private string? _customError;
+    private string? _programError;
+    private bool _addingApps;
+    private bool _allGamesShown;
 
     private ContentControl? _tilesHost;
     private ContentControl? _pickedHost;
     private PillButton? _addButton;
 
+    /// <summary>Opens the Add screen: on apps and games when the rule holds only those, else on websites.</summary>
     private void OpenAddSites()
     {
         _pickedCatalog.Clear();
         _pickedCustom.Clear();
+        _pickedApps.Clear();
         _siteQuery = "";
+        _appQuery = "";
         _customAddress = "";
         _customError = null;
+        _programError = null;
+        _allGamesShown = false;
+        _addingApps = _editingRule is { Sites.Count: 0, Apps.Count: > 0 };
         Navigate(Page.AddSites);
     }
 
@@ -42,10 +58,29 @@ internal sealed partial class MainWindow
         _addButton = new PillButton(Loc.T("add"), ButtonKind.Primary);
         _addButton.Click += (_, _) => CommitPickedSites();
 
-        var search = new TextField(_siteQuery, Loc.T("search_websites"), TextFieldStyle.Large, leadingGlyph: Glyph.Search);
+        var tabs = new Segmented(new Segment[] { new(Loc.T("websites")), new(Loc.T("apps_games")) }, _addingApps ? 1 : 0, stretch: false)
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        tabs.Changed += i =>
+        {
+            _addingApps = i == 1;
+            Rerender();
+        };
+
+        string query = _addingApps ? _appQuery : _siteQuery;
+        var search = new TextField(query, Loc.T(_addingApps ? "search_apps" : "search_websites"), TextFieldStyle.Large, leadingGlyph: Glyph.Search);
         search.Changed += text =>
         {
-            _siteQuery = text;
+            if (_addingApps)
+            {
+                _appQuery = text;
+            }
+            else
+            {
+                _siteQuery = text;
+            }
+
             RebuildTiles();
         };
 
@@ -53,9 +88,9 @@ internal sealed partial class MainWindow
         _pickedHost = new ContentControl();
         RebuildTiles();
 
-        StackPanel left = Layout.Column(18, search, _tilesHost, CustomSiteCard());
+        StackPanel left = Layout.Column(18, tabs, search, _tilesHost, _addingApps ? OtherProgramCard() : CustomSiteCard());
         return new FullPageLayout(
-            new TopBar(back, new TextLine(Loc.T("add_websites"), TextStyle.Heading), Layout.Row(10, cancel, _addButton)),
+            new TopBar(back, new TextLine(Loc.T("add"), TextStyle.Heading), Layout.Row(10, cancel, _addButton)),
             Layout.Columns(left, _pickedHost, 320, fixedRight: true));
     }
 
@@ -63,6 +98,13 @@ internal sealed partial class MainWindow
     {
         if (_tilesHost is null || _editingRule is not { } rule)
         {
+            return;
+        }
+
+        if (_addingApps)
+        {
+            _tilesHost.Content = AppTiles(rule);
+            RebuildPicked();
             return;
         }
 
@@ -99,6 +141,157 @@ internal sealed partial class MainWindow
         };
         return tile;
     }
+
+    // ----- Apps and games -----
+
+    /// <summary>
+    /// Steam first (all its games, Steam itself, then each installed game), then the
+    /// programs open now or used today. A search narrows both.
+    /// </summary>
+    private Control AppTiles(EditableConfiguration.EditableRule rule)
+    {
+        string q = _appQuery.Trim();
+        bool Fits(string name) => q.Length == 0 || name.Contains(q, StringComparison.OrdinalIgnoreCase);
+        bool allGames = rule.Apps.Any(a => a.Kind == TargetAppKind.AllSteamGames);
+        var sections = new StackPanel { Spacing = Space.S5 };
+
+        if (SteamInstall.IsInstalled)
+        {
+            var steam = new List<Control>();
+            foreach (EditableConfiguration.EditableApp entry in new[] { EditableConfiguration.EditableApp.AllSteamGames(), EditableConfiguration.EditableApp.For(new AppIdentity(AppKind.Steam, "Steam", "steam.exe")) })
+            {
+                if (Fits(AppLabel(entry)))
+                {
+                    steam.Add(AppTile(rule, entry, null));
+                }
+            }
+
+            List<SteamGame> games = SteamInstall.Games.Where(g => Fits(g.Name)).ToList();
+            bool cut = q.Length == 0 && !_allGamesShown && games.Count > GamesShown;
+            foreach (SteamGame game in cut ? games.Take(GamesShown) : games)
+            {
+                var entry = new EditableConfiguration.EditableApp { Kind = TargetAppKind.SteamGame, Label = game.Name, Folder = game.Folder };
+                steam.Add(AppTile(rule, entry, allGames ? Loc.T("covered_by_all") : null, hideCaption: true));
+            }
+
+            if (steam.Count > 0)
+            {
+                StackPanel section = Layout.Column(Space.S3, new TextLine("Steam", TextStyle.Overline), Layout.Tiles(steam, 200, Space.S3));
+                if (cut)
+                {
+                    var all = new PillButton(Loc.T("show_all_n", games.Count), ButtonKind.Accent) { HorizontalAlignment = HorizontalAlignment.Left };
+                    all.Click += (_, _) =>
+                    {
+                        _allGamesShown = true;
+                        RebuildTiles();
+                    };
+                    section.Children.Add(all);
+                }
+
+                sections.Children.Add(section);
+            }
+        }
+
+        var open = _status.Apps.Where(a => a.Identity.Kind == AppKind.Program).Select(a => a.Identity).ToList();
+        HashSet<string> openKeys = open.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+        List<AppIdentity> programs = open
+            .Concat(_status.Activity.Apps.Values.Select(t => t.App).OfType<AppIdentity>().Where(a => a.Kind == AppKind.Program))
+            .DistinctBy(a => a.Key)
+            .Concat(_pickedApps.Where(a => a.Kind == TargetAppKind.Program && a.Exe is not null)
+                .Select(a => new AppIdentity(AppKind.Program, a.Label, a.Exe!, a.Description)))
+            .DistinctBy(a => a.Key)
+            .Where(a => Fits(a.Name))
+            .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        StackPanel programSection = Layout.Column(Space.S3, new TextLine(Loc.T("programs"), TextStyle.Overline));
+        if (programs.Count == 0)
+        {
+            programSection.Children.Add(new TextLine(q.Length == 0 ? Loc.T("no_programs") : Loc.T("no_matching_sites"), TextStyle.Small));
+        }
+        else
+        {
+            programSection.Children.Add(Layout.Tiles(
+                programs.Select(a => AppTile(rule, EditableConfiguration.EditableApp.For(a), openKeys.Contains(a.Key) ? Loc.T("open_now") : null)).ToList(),
+                200,
+                Space.S3));
+        }
+
+        sections.Children.Add(programSection);
+        return sections;
+    }
+
+    /// <summary>A pickable app; locked when the rule has it already, or has all Steam games for a game.</summary>
+    private Control AppTile(EditableConfiguration.EditableRule rule, EditableConfiguration.EditableApp entry, string? note, bool hideCaption = false)
+    {
+        bool already = rule.Apps.Any(a => a.SameAs(entry));
+        bool covered = entry.Kind == TargetAppKind.SteamGame && rule.Apps.Any(a => a.Kind == TargetAppKind.AllSteamGames);
+        string? sub = already ? Loc.T("already_in_rule") : covered ? note : note ?? (hideCaption ? null : AppCaption(entry));
+        StackPanel text = Layout.Column(3, new TextLine(AppLabel(entry), TextStyle.Label));
+        if (sub is not null)
+        {
+            text.Children.Add(new TextLine(sub, TextStyle.Caption) { SingleLine = true });
+        }
+
+        var tile = new PickTile(Layout.Column(Space.S3, AppMark(entry), text), picked: _pickedApps.Any(a => a.SameAs(entry)), locked: already || covered);
+        ToolTip.SetTip(tile, AppLabel(entry));
+        tile.Click += (_, _) =>
+        {
+            if (_pickedApps.RemoveAll(a => a.SameAs(entry)) == 0)
+            {
+                _pickedApps.Add(entry);
+            }
+
+            RebuildTiles();
+        };
+        return tile;
+    }
+
+    /// <summary>A program that isn't listed: chosen by its .exe file.</summary>
+    private Control OtherProgramCard()
+    {
+        var choose = new PillButton(Loc.T("choose_program"), ButtonKind.Secondary) { HorizontalAlignment = HorizontalAlignment.Left };
+        choose.Click += async (_, _) =>
+        {
+            IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = Loc.T("choose_program"),
+                AllowMultiple = false,
+                FileTypeFilter = new[] { new FilePickerFileType(Loc.T("program")) { Patterns = new[] { "*.exe" } } },
+            });
+            if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path)
+            {
+                return;
+            }
+
+            if (new WindowsAppObserver().Identify(path) is { } app)
+            {
+                _programError = null;
+                EditableConfiguration.EditableApp entry = EditableConfiguration.EditableApp.For(app);
+                if (!_pickedApps.Any(a => a.SameAs(entry)))
+                {
+                    _pickedApps.Add(entry);
+                }
+            }
+            else
+            {
+                _programError = Loc.T("cant_limit_program");
+            }
+
+            Rerender();
+        };
+
+        StackPanel card = Layout.Column(Space.S3,
+            Layout.Column(Space.S1, new TextLine(Loc.T("other_program"), TextStyle.Subheading), new TextLine(Loc.T("other_program_help"), TextStyle.Small)),
+            choose);
+        if (_programError is not null)
+        {
+            card.Children.Add(new TextLine(_programError, TextStyle.CaptionStrong, TextTone.Danger));
+        }
+
+        return new Card(card);
+    }
+
+    // ----- Websites -----
 
     private Control CustomSiteCard()
     {
@@ -144,6 +337,8 @@ internal sealed partial class MainWindow
             error));
     }
 
+    // ----- Coming into the rule -----
+
     private void RebuildPicked()
     {
         if (_pickedHost is null)
@@ -155,10 +350,16 @@ internal sealed partial class MainWindow
             .Concat(_pickedCustom)
             .ToList();
 
-        StackPanel list = Layout.Column(Space.S4,
-            Layout.Column(Space.S1, new TextLine(Loc.T("coming_into_rule"), TextStyle.Subheading), new TextLine(Loc.T("coming_into_rule_help"), TextStyle.Small)));
+        // The help is about websites' pages; apps come whole.
+        StackPanel heading = Layout.Column(Space.S1, new TextLine(Loc.T("coming_into_rule"), TextStyle.Subheading));
+        if (!_addingApps)
+        {
+            heading.Children.Add(new TextLine(Loc.T("coming_into_rule_help"), TextStyle.Small));
+        }
 
-        if (sites.Count == 0)
+        StackPanel list = Layout.Column(Space.S4, heading);
+
+        if (sites.Count == 0 && _pickedApps.Count == 0)
         {
             list.Children.Add(new Card(new TextLine(Loc.T("pick_a_website"), TextStyle.Small) { Centered = true }, CardStyle.Outline, CardPadding.Roomy));
         }
@@ -200,17 +401,22 @@ internal sealed partial class MainWindow
             list.Children.Add(new Divider());
         }
 
+        foreach (EditableConfiguration.EditableApp app in _pickedApps)
+        {
+            list.Children.Add(AppLine(app, () =>
+            {
+                _pickedApps.Remove(app);
+                RebuildTiles();
+            }, mark: 26));
+            list.Children.Add(new Divider());
+        }
+
         _pickedHost.Content = new Card(list);
 
-        int count = sites.Count;
+        int count = sites.Count + _pickedApps.Count;
         if (_addButton is not null)
         {
-            _addButton.Text = count switch
-            {
-                0 => Loc.T("add"),
-                1 => Loc.T("add_one_website"),
-                _ => Loc.T("add_n_websites", count),
-            };
+            _addButton.Text = count == 0 ? Loc.T("add") : Loc.T("add_n", count);
             _addButton.Enabled = count > 0;
         }
     }
@@ -235,7 +441,7 @@ internal sealed partial class MainWindow
         var added = _pickedCatalog.Select(id => EditableConfiguration.EditableSite.FromCatalog(SiteCatalog.Get(id)))
             .Concat(_pickedCustom)
             .ToList();
-        if (added.Count == 0)
+        if (added.Count == 0 && _pickedApps.Count == 0)
         {
             return;
         }
@@ -244,6 +450,11 @@ internal sealed partial class MainWindow
         {
             rule.Sites.Add(site);
             _openSites.Add(site);
+        }
+
+        foreach (EditableConfiguration.EditableApp app in _pickedApps)
+        {
+            rule.Block(app);
         }
 
         Navigate(Page.Editor);

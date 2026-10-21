@@ -1,3 +1,4 @@
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 
 namespace BrainRotDoctor.Core.Accounting;
@@ -16,7 +17,7 @@ public readonly record struct RuleUsage(string RuleId, DateTimeOffset HourStart,
 /// closed because a rule blocks the site they show.
 ///
 /// The engine owns no clock and touches no OS resources. The caller supplies the
-/// browser snapshot and the current instant on every <see cref="Tick"/>, which
+/// browser snapshot and the current instant on every <c>Tick</c>, which
 /// makes the whole model reproducible and unit-testable.
 ///
 /// Per rule:
@@ -52,8 +53,18 @@ public sealed class BudgetEngine
     }
 
     public TickResult Tick(IReadOnlyList<BrowserWindowState> windows, DateTimeOffset now)
+        => Tick(windows, Array.Empty<AppIdentity>(), now);
+
+    /// <summary>
+    /// Advances by one tick with the selected tabs of the browser windows and the apps
+    /// that count right now (which apps count is the caller's decision). An app is
+    /// charged and blocked like a page: its rules are charged once per tick, however many
+    /// pages and apps of a rule count at the same time.
+    /// </summary>
+    public TickResult Tick(IReadOnlyList<BrowserWindowState> windows, IReadOnlyList<AppIdentity> apps, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(windows);
+        ArgumentNullException.ThrowIfNull(apps);
 
         TimeSpan elapsed = ComputeElapsed(now);
         _lastTick = now;
@@ -75,6 +86,17 @@ public sealed class BudgetEngine
             }
 
             foreach (Rule rule in _configuration.MatchingRules(window.Url))
+            {
+                if (!rule.BlocksCompletely && rule.IsActiveAt(now))
+                {
+                    affected.Add(rule.Id);
+                }
+            }
+        }
+
+        foreach (AppIdentity app in apps)
+        {
+            foreach (Rule rule in _configuration.MatchingRules(app))
             {
                 if (!rule.BlocksCompletely && rule.IsActiveAt(now))
                 {
@@ -109,7 +131,55 @@ public sealed class BudgetEngine
             }
         }
 
-        return new TickResult(decisions, BuildSnapshots(now, affected));
+        var appDecisions = new List<AppCloseDecision>();
+        foreach (AppIdentity app in apps.DistinctBy(a => a.Key))
+        {
+            if (BlockingRuleFor(app, now) is { } ruleId)
+            {
+                appDecisions.Add(new AppCloseDecision(app, ruleId));
+            }
+        }
+
+        return new TickResult(decisions, BuildSnapshots(now, affected), appDecisions);
+    }
+
+    /// <summary>The rule that blocks <paramref name="app"/> right now, without advancing time; null when it may run.</summary>
+    public string? BlockingRuleFor(AppIdentity app, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        foreach (Rule rule in _configuration.MatchingRules(app))
+        {
+            if (_states[rule.Id].IsBlocking(now))
+            {
+                return rule.Id;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The earliest block coming for <paramref name="app"/> within <paramref name="within"/>,
+    /// without advancing time: now when a rule blocks it already, the start of a rule that
+    /// blocks completely, or the moment an allowance runs out while the app keeps
+    /// counting (<paramref name="counting"/>; an allowance refilled on the hour first is
+    /// no block). Null when nothing blocks it in that time. A rule's allowance spent
+    /// by its other pages and apps can still end sooner; that isn't foreseen.
+    /// </summary>
+    public BlockAhead? BlockAheadFor(AppIdentity app, DateTimeOffset now, TimeSpan within, bool counting)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        BlockAhead? earliest = null;
+        foreach (Rule rule in _configuration.MatchingRules(app))
+        {
+            DateTimeOffset? at = _states[rule.Id].BlocksAt(now, within, counting);
+            if (at is { } t && (earliest is null || t < earliest.At))
+            {
+                earliest = new BlockAhead(t, rule.Id);
+            }
+        }
+
+        return earliest;
     }
 
     /// <summary>
@@ -155,7 +225,7 @@ public sealed class BudgetEngine
     /// <summary>
     /// Seeds rules with previously recorded usage (by rule id). Records for rules
     /// this engine doesn't have are ignored. A record from a past clock hour is
-    /// harmless: the next <see cref="Tick"/> rolls the rule and clears it, so a new
+    /// harmless: the next <c>Tick</c> rolls the rule and clears it, so a new
     /// hour always starts fresh.
     /// </summary>
     public void RestoreUsage(IEnumerable<RuleUsage> usage)
@@ -220,6 +290,31 @@ public sealed class BudgetEngine
             }
 
             return _rule.BlocksCompletely || _consumed >= _rule.Allowance!.Value;
+        }
+
+        public DateTimeOffset? BlocksAt(DateTimeOffset now, TimeSpan within, bool counting)
+        {
+            if (IsBlocking(now))
+            {
+                return now;
+            }
+
+            if (_rule.BlocksCompletely)
+            {
+                return _rule.StartsWithin(now, within);
+            }
+
+            if (!counting || !_rule.IsActiveAt(now))
+            {
+                return null;
+            }
+
+            // The hour may have turned since the last tick: then the allowance is full again.
+            TimeSpan consumed = _rule.HourWindowStart(now) == _hourStart ? _consumed : TimeSpan.Zero;
+            DateTimeOffset spent = now + (_rule.Allowance!.Value - consumed);
+            return spent - now <= within && spent < _rule.HourWindowStart(now) + Rule.AllowancePeriod && _rule.IsActiveAt(spent)
+                ? spent
+                : null;
         }
 
         public void Roll(DateTimeOffset now)

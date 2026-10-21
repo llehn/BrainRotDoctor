@@ -26,6 +26,7 @@ internal sealed partial class MainWindow
     private TextLine? _summaryText;
     private StackPanel? _sitesPanel;
     private ContentControl? _testResultHost;
+    private ContentControl? _testerHost;
 
     private void OpenEditor(EditableConfiguration.EditableRule rule, int index, Page returnTo = Page.Home)
     {
@@ -231,7 +232,7 @@ internal sealed partial class MainWindow
             return list.Length == 0 ? "" : $"{site.DisplayLabel} ({list})";
         }
 
-        string limited = string.Join("; ", rule.Sites.Select(s => Describe(s, true)).Where(s => s.Length > 0));
+        string limited = string.Join("; ", rule.Sites.Select(s => Describe(s, true)).Concat(rule.Apps.Select(AppLabel)).Where(s => s.Length > 0));
         string open = string.Join("; ", rule.Sites.Select(s => Describe(s, false)).Where(s => s.Length > 0));
         lines.Add(Loc.T("sum_limits", limited.Length == 0 ? Loc.T("nothing_yet") : limited));
         if (open.Length > 0)
@@ -246,7 +247,7 @@ internal sealed partial class MainWindow
 
     private Control BuildWhatColumn()
     {
-        var addSites = new PillButton(Loc.T("add_websites"), ButtonKind.Secondary, Glyph.Plus);
+        var addSites = new PillButton(Loc.T("add"), ButtonKind.Secondary, Glyph.Plus);
         addSites.Click += (_, _) => OpenAddSites();
 
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -257,9 +258,10 @@ internal sealed partial class MainWindow
         header.Children.Add(addSites);
 
         _sitesPanel = new StackPanel { Spacing = Space.S4 };
+        _testerHost = new ContentControl { Content = BuildTester() };
         RebuildSites();
 
-        return Layout.Column(Space.S4, header, _sitesPanel, BuildTester());
+        return Layout.Column(Space.S4, header, _sitesPanel, _testerHost);
     }
 
     private void RebuildSites()
@@ -270,9 +272,15 @@ internal sealed partial class MainWindow
         }
 
         _sitesPanel.Children.Clear();
-        if (rule.Sites.Count == 0)
+        if (_testerHost is not null)
         {
-            var add = new PillButton(Loc.T("add_websites"), ButtonKind.Primary, Glyph.Plus) { HorizontalAlignment = HorizontalAlignment.Center };
+            // The address checker is for websites only.
+            _testerHost.IsVisible = rule.Sites.Count > 0;
+        }
+
+        if (rule.Sites.Count == 0 && rule.Apps.Count == 0)
+        {
+            var add = new PillButton(Loc.T("add"), ButtonKind.Primary, Glyph.Plus) { HorizontalAlignment = HorizontalAlignment.Center };
             add.Click += (_, _) => OpenAddSites();
             var globe = new Icon(Glyph.Globe, 28, TextTone.Tertiary) { HorizontalAlignment = HorizontalAlignment.Center };
             _sitesPanel.Children.Add(new Card(
@@ -290,6 +298,30 @@ internal sealed partial class MainWindow
         {
             _sitesPanel.Children.Add(SiteCard(rule, site));
         }
+
+        if (rule.Apps.Count > 0)
+        {
+            _sitesPanel.Children.Add(AppsCard(rule));
+        }
+    }
+
+    /// <summary>The rule's apps and games: one row each, limited whole, taken out with their ×.</summary>
+    private Control AppsCard(EditableConfiguration.EditableRule rule)
+    {
+        var rows = new StackPanel();
+        rows.Children.Add(new Band(new TextLine(Loc.T("apps_games"), TextStyle.Subheading), new Thickness(Space.S5, Space.S4)));
+        foreach (EditableConfiguration.EditableApp app in rule.Apps.ToList())
+        {
+            rows.Children.Add(new Divider());
+            rows.Children.Add(new Band(AppLine(app, () =>
+            {
+                rule.Apps.Remove(app);
+                RebuildSites();
+                RebuildSchedule();
+            }), new Thickness(Space.S5, Space.S3)));
+        }
+
+        return new Card(rows, CardStyle.Surface, CardPadding.None);
     }
 
     private Control SiteCard(EditableConfiguration.EditableRule rule, EditableConfiguration.EditableSite site)
@@ -718,7 +750,7 @@ internal sealed partial class MainWindow
             return;
         }
 
-        string? problem = rule.Sites.Count == 0 ? Loc.T("need_site")
+        string? problem = rule.Sites.Count == 0 && rule.Apps.Count == 0 ? Loc.T("need_site")
             : rule.Days.Count == 0 ? Loc.T("need_day")
             : !rule.AllDay && rule.From == rule.To ? Loc.T("bad_window")
             : null;

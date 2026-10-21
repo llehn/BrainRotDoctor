@@ -1,11 +1,12 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows.Automation;
 
 namespace BrainRotDoctor.App.Runtime;
 
 internal sealed class UiAutomationBrowserObserver : IBrowserObserver
 {
-    private static readonly IReadOnlyDictionary<string, string> SupportedBrowsers =
+    internal static readonly IReadOnlyDictionary<string, string> SupportedBrowsers =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["chrome"] = "Chrome",
@@ -89,27 +90,62 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         return handles;
     }
 
-    private static bool TryGetBrowserName(IntPtr handle, out string? browserName)
+    internal static bool TryGetBrowserName(IntPtr handle, out string? browserName)
     {
         browserName = null;
         NativeMethods.GetWindowThreadProcessId(handle, out uint pid);
-        if (pid == 0)
+        if (pid == 0 || NativeMethods.ProcessImage(pid) is not { } image)
         {
             return false;
+        }
+
+        browserName = BrowserName(pid, image);
+        return browserName is not null;
+    }
+
+    /// <summary>The browser process <paramref name="pid"/> is, or null; <paramref name="image"/> is its program file and start time.</summary>
+    internal static string? BrowserName(uint pid, (string Path, long Started) image)
+    {
+        if (!BrowserProcesses.TryGetValue(pid, out (long Started, string? Browser) known) || known.Started != image.Started)
+        {
+            known = (image.Started, BrowserOf(pid, image.Path));
+            BrowserProcesses[pid] = known;
+        }
+
+        return known.Browser;
+    }
+
+    // Which browser each process is, by id and start time (a reused id is a new process).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, (long Started, string? Browser)> BrowserProcesses = new();
+
+    /// <summary>
+    /// The browser a process is, by its program file. When Firefox updated itself while
+    /// running, its file was renamed ("moz…"); then the file it was started from says.
+    /// Only then is the process looked into: reading other programs, such as games under
+    /// anti-cheat, is never needed.
+    /// </summary>
+    private static string? BrowserOf(uint pid, string path)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        if (SupportedBrowsers.TryGetValue(name, out string? browser))
+        {
+            return browser;
+        }
+
+        if (!name.StartsWith("moz", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
         }
 
         try
         {
             using Process process = Process.GetProcessById((int)pid);
-            return SupportedBrowsers.TryGetValue(process.ProcessName, out browserName);
+            string? started = process.MainModule?.FileName;
+            return started is not null && SupportedBrowsers.TryGetValue(Path.GetFileNameWithoutExtension(started), out browser) ? browser : null;
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
+            return null;
         }
     }
 

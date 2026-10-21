@@ -62,11 +62,12 @@ internal sealed partial class MainWindow
 
     private bool _showUntracked;
 
-    /// <summary>The sites you said are okay: behind a button, since nobody needs to see that list at a glance.</summary>
+    /// <summary>The sites and apps you said are okay: behind a button, since nobody needs to see that list at a glance.</summary>
     private Control? UntrackedGroup()
     {
         HashSet<string> untracked = Untracked();
-        if (untracked.Count == 0)
+        Dictionary<string, string> apps = UntrackedApps();
+        if (untracked.Count == 0 && apps.Count == 0)
         {
             return null;
         }
@@ -94,6 +95,13 @@ internal sealed partial class MainWindow
             var again = new PillButton(Loc.T("track_again"), ButtonKind.Accent, size: ButtonSize.Small);
             again.Click += (_, _) => SetTracked(host, true);
             sites.Children.Add(new Card(Layout.Row(Space.S2, new TextLine(host, TextStyle.Strong), again), CardStyle.Inset, CardPadding.Compact));
+        }
+
+        foreach ((string key, string name) in apps.OrderBy(a => a.Value, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var again = new PillButton(Loc.T("track_again"), ButtonKind.Accent, size: ButtonSize.Small);
+            again.Click += (_, _) => SetAppTracked(key, name, true);
+            sites.Children.Add(new Card(Layout.Row(Space.S2, new TextLine(name, TextStyle.Strong), again), CardStyle.Inset, CardPadding.Compact));
         }
 
         return new Group(Loc.T("okay_sites"), Group.Row(head), Group.Row(sites));

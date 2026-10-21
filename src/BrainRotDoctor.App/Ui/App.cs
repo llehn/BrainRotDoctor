@@ -16,6 +16,7 @@ internal sealed class App : Application
     private readonly UiSettingsStore _settings;
     private readonly bool _startInTray;
     private readonly WormScene _scene = new(new ExtractionScript());
+    private readonly HeadsUpOverlay _headsUp = new();
     private MainWindow? _window;
 
     public App(EnforcementController controller, UiSettingsStore settings, bool startInTray)
@@ -74,12 +75,27 @@ internal sealed class App : Application
                 },
                 DispatcherPriority.Background);
             _controller.BlockSceneStarting += (_, scene) => Dispatcher.UIThread.Post(() => Play(scene));
+            _controller.StatusChanged += (_, status) => Dispatcher.UIThread.Post(() => ShowHeadsUp(status));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>Plays the worm scene for tabs due to close; they close on the pop.</summary>
+    /// <summary>The heads-up for open apps a block will close soon; gone when there are none.</summary>
+    private void ShowHeadsUp(AppStatus status)
+    {
+        try
+        {
+            _headsUp.Update(status.HeadsUps, DateTimeOffset.Now);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Without the panel the minute still runs; the scene still plays at its end.
+            _headsUp.Hide();
+        }
+    }
+
+    /// <summary>Plays the worm scene for tabs and apps due to close; they close on the pop.</summary>
     private void Play(BlockScene due)
     {
         try
@@ -101,12 +117,12 @@ internal sealed class App : Application
         }
     }
 
-    /// <summary>The middle of the first blocked browser window, so the scene plays on that screen.</summary>
+    /// <summary>The middle of the first blocked window, so the scene plays on that screen.</summary>
     private static PixelPoint? ScreenPointOf(BlockScene due)
     {
-        foreach (ObservedBrowserWindow window in due.Windows)
+        foreach (IntPtr window in due.Windows)
         {
-            if (NativeMethods.GetWindowRect(window.WindowHandle, out NativeMethods.RECT r))
+            if (!NativeMethods.IsIconic(window) && NativeMethods.GetWindowRect(window, out NativeMethods.RECT r))
             {
                 return new PixelPoint((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
             }

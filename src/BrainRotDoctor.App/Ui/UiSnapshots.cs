@@ -9,6 +9,7 @@ using Avalonia.VisualTree;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Accounting;
 using BrainRotDoctor.Core.Activity;
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 using BrainRotDoctor.DesignSystem;
 using System.IO;
@@ -47,6 +48,11 @@ internal static class UiSnapshots
             {
                 SiteCatalog.Get("reddit").ToDocumentBlockingEverything(),
                 SiteCatalog.Get("x").ToDocumentBlockingEverything(),
+            },
+            Apps = new()
+            {
+                new AppDocument { Kind = AppDocument.AllSteamGames },
+                new AppDocument { Kind = AppDocument.Program, Label = "Discord", Exe = "discord.exe", Description = "Discord" },
             },
         });
         string json = doc.ToJson();
@@ -101,10 +107,19 @@ internal static class UiSnapshots
             ("wikipedia.org", 0.6, 1), ("bbc.com", 0.4, 1),
         };
 
+        var apps = new[]
+        {
+            new AppIdentity(AppKind.SteamGame, "Valheim", "valheim.exe", "Valheim", "Valheim"),
+            new AppIdentity(AppKind.Program, "Visual Studio Code", "code.exe", "Visual Studio Code"),
+            new AppIdentity(AppKind.Steam, "Steam", "steamwebhelper.exe"),
+        };
+        double[] appMinutes = { 88, 64, 9 };
+
         return new ActivityRecord
         {
             Day = ActivityTally.DayOf(now),
             Places = places.ToDictionary(p => p.Key, p => new PlaceTotal { Seconds = p.Minutes * 60, Visits = p.Visits }),
+            Apps = apps.Select((a, i) => (a, i)).ToDictionary(x => x.a.Key, x => new AppTotal { Seconds = appMinutes[x.i] * 60, Visits = 2, App = x.a }),
         };
     }
 
@@ -179,6 +194,11 @@ internal static class UiSnapshots
             await Shot("00b-status-site", 900);
             window.PreviewSite("youtube.com");
             await Shot("00e-status-site-in-rules", 900);
+            window.PreviewApp("steam-game:valheim");
+            await Shot("00g-status-game", 900);
+            window.PreviewApp("program:code.exe|visual studio code");
+            await Shot("00h-status-program", 900);
+            window.PreviewApp(null);
             _controller.Pause(TimeSpan.FromMinutes(15));
             window.PreviewSite("instagram.com");
             await Shot("00f-status-site-paused", 900);
@@ -248,6 +268,10 @@ internal static class UiSnapshots
 
             window.PreviewAddSites("facebook", "x");
             await Shot("07-add-sites", 900);
+            window.PreviewAddApps();
+            await Shot("07b-add-apps", 1100);
+            window.PreviewEditor(2, "", null);
+            await Shot("07c-editor-with-apps", 1100);
 
             window.PreviewPage("strict");
             await Shot("08-strict-setup", 900);
@@ -368,6 +392,25 @@ internal sealed partial class MainWindow
         _controller.SetUntrackedSites(_untracked);
         _showEverything = true;
         PreviewPage("status");
+    }
+
+    /// <summary>The status view with an app enlarged, or none.</summary>
+    internal void PreviewApp(string? key)
+    {
+        _status = _controller.Status;
+        _openSite = null;
+        _openApp = key;
+        Navigate(Page.Status);
+    }
+
+    /// <summary>The Add screen on apps and games, with All Steam games picked.</summary>
+    internal void PreviewAddApps()
+    {
+        OpenEditor(NewRule(), -1);
+        OpenAddSites();
+        _addingApps = true;
+        _pickedApps.Add(EditableConfiguration.EditableApp.AllSteamGames());
+        Rerender();
     }
 
     internal void PreviewAddSites(params string[] picks)

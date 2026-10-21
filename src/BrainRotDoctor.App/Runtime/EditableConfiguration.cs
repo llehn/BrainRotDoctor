@@ -1,3 +1,4 @@
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 
 namespace BrainRotDoctor.App.Runtime;
@@ -61,6 +62,8 @@ internal sealed class EditableConfiguration
 
         public List<EditableSite> Sites { get; } = new();
 
+        public List<EditableApp> Apps { get; } = new();
+
         /// <summary>A deep copy, used so the editor can discard unsaved changes.</summary>
         internal EditableRule Clone() => FromDocument(ToDocument());
 
@@ -94,6 +97,11 @@ internal sealed class EditableConfiguration
                 rule.Sites.Add(EditableSite.FromDocument(site));
             }
 
+            foreach (AppDocument app in dto.Apps ?? new())
+            {
+                rule.Apps.Add(EditableApp.FromDocument(app));
+            }
+
             return rule;
         }
 
@@ -110,6 +118,7 @@ internal sealed class EditableConfiguration
                 ? null
                 : AllDays.Where(Days.Contains).Select(d => d.ToString()).ToList(),
             Sites = Sites.Select(s => s.ToDocument()).ToList(),
+            Apps = Apps.Count == 0 ? null : Apps.Select(a => a.ToDocument()).ToList(),
         };
 
         /// <summary>The validated rule, for checking an address against unsaved edits.</summary>
@@ -161,6 +170,15 @@ internal sealed class EditableConfiguration
                 {
                     existing.Pages.Add(page);
                 }
+            }
+        }
+
+        /// <summary>Adds <paramref name="app"/> unless the rule has the same app already.</summary>
+        internal void Block(EditableApp app)
+        {
+            if (!Apps.Any(a => a.SameAs(app)))
+            {
+                Apps.Add(app);
             }
         }
 
@@ -269,6 +287,59 @@ internal sealed class EditableConfiguration
                 return PageMatch.Under;
             }
         }
+    }
+
+    /// <summary>One app in a rule: a program, a Steam game, all Steam games, or Steam.</summary>
+    internal sealed class EditableApp
+    {
+        public TargetAppKind Kind { get; set; }
+        public string Label { get; set; } = "";
+        public string? Exe { get; set; }
+        public string? Description { get; set; }
+        public string? Folder { get; set; }
+
+        internal static EditableApp FromDocument(AppDocument dto)
+        {
+            TargetAppKind kind;
+            try
+            {
+                kind = AppDocument.ParseKind(dto.Kind);
+            }
+            catch (ConfigurationException)
+            {
+                kind = TargetAppKind.Program;
+            }
+
+            return new EditableApp { Kind = kind, Label = dto.Label ?? "", Exe = dto.Exe, Description = dto.Description, Folder = dto.Folder };
+        }
+
+        /// <summary>The rule entry for an app as it runs: that program, that Steam game, or Steam.</summary>
+        public static EditableApp For(AppIdentity app) => app.Kind switch
+        {
+            AppKind.Steam => new EditableApp { Kind = TargetAppKind.Steam, Label = "Steam" },
+            AppKind.SteamGame => new EditableApp { Kind = TargetAppKind.SteamGame, Label = app.Name, Folder = app.SteamFolder },
+            _ => new EditableApp { Kind = TargetAppKind.Program, Label = app.Name, Exe = app.Exe, Description = app.Description },
+        };
+
+        public static EditableApp AllSteamGames() => new() { Kind = TargetAppKind.AllSteamGames, Label = "All Steam games" };
+
+        internal AppDocument ToDocument() => new()
+        {
+            Kind = AppDocument.KindText(Kind),
+            Label = Label.Trim(),
+            Exe = string.IsNullOrWhiteSpace(Exe) ? null : Exe.Trim().ToLowerInvariant(),
+            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
+            Folder = string.IsNullOrWhiteSpace(Folder) ? null : Folder.Trim(),
+        };
+
+        internal TargetApp ToTargetApp() => ConfigurationLoader.MapApp(ToDocument());
+
+        /// <summary>The same entry: same kind and the same program, game or none.</summary>
+        internal bool SameAs(EditableApp other) =>
+            Kind == other.Kind
+            && string.Equals(Exe ?? "", other.Exe ?? "", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Description ?? "", other.Description ?? "", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Folder ?? "", other.Folder ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     internal sealed class EditablePage

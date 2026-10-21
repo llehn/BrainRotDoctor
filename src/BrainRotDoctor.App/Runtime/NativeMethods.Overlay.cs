@@ -93,6 +93,11 @@ internal static partial class NativeMethods
     public const uint SND_ASYNC = 0x0001;
     public const uint SND_NODEFAULT = 0x0002;
     public const uint SND_MEMORY = 0x0004;
+    public const uint SND_ALIAS = 0x00010000;
+
+    [LibraryImport("winmm.dll", EntryPoint = "PlaySoundW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PlaySoundAlias(string sound, IntPtr module, uint flags);
 
     [LibraryImport("winmm.dll", EntryPoint = "PlaySoundW")]
     [return: MarshalAs(UnmanagedType.Bool)]

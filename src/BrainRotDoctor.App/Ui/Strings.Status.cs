@@ -22,7 +22,7 @@ internal static partial class Strings
     {
         ["en"] = new[]
         {
-            "Status", "Nothing yet today. Time with a page in front in Chrome, Edge, Firefox, Brave, Vivaldi or Opera shows up here.", "Undo", "Strict mode is off",
+            "Status", "Nothing yet today. Time with an app, a game or a web page in front shows up here.", "Undo", "Strict mode is off",
             "Today", "Turn on", "2 hours", "Until {0}", "More options", "Strict mode is activating…",
             "Block {0}", "Always", "After {0} min an hour", "Block this part", "The rest of {0}", "Limited · {0}",
             "It's fine. Stop tracking {0}", "{0} is no longer tracked.", "Close", "Sites you don't track", "No time is recorded on these sites.", "Show",
@@ -30,7 +30,7 @@ internal static partial class Strings
         },
         ["de"] = new[]
         {
-            "Status", "Heute noch nichts. Zeit mit einer Seite im Vordergrund in Chrome, Edge, Firefox, Brave, Vivaldi oder Opera erscheint hier.", "Rückgängig", "Strikter Modus ist aus",
+            "Status", "Heute noch nichts. Zeit mit einer App, einem Spiel oder einer Webseite im Vordergrund erscheint hier.", "Rückgängig", "Strikter Modus ist aus",
             "Heute", "Einschalten", "2 Stunden", "Bis {0}", "Weitere Optionen", "Strikter Modus wird aktiviert…",
             "{0} blockieren", "Immer", "Nach {0} Min. pro Stunde", "Diesen Teil blockieren", "Der Rest von {0}", "Begrenzt · {0}",
             "Ist in Ordnung. {0} nicht mehr erfassen", "{0} wird nicht mehr erfasst.", "Schließen", "Websites, die du nicht erfasst", "Auf diesen Websites wird keine Zeit erfasst.", "Anzeigen",
@@ -38,7 +38,7 @@ internal static partial class Strings
         },
         ["fr"] = new[]
         {
-            "Statut", "Rien pour l'instant. Le temps passé avec une page au premier plan dans Chrome, Edge, Firefox, Brave, Vivaldi ou Opera apparaît ici.", "Annuler", "Le mode strict est désactivé",
+            "Statut", "Rien pour l'instant. Le temps passé avec une appli, un jeu ou une page web au premier plan apparaît ici.", "Annuler", "Le mode strict est désactivé",
             "Aujourd'hui", "Activer", "2 heures", "Jusqu'à {0}", "Plus d'options", "Activation du mode strict…",
             "Bloquer {0}", "Toujours", "Après {0} min par heure", "Bloquer cette partie", "Le reste de {0}", "Limité · {0}",
             "C'est bon. Ne plus suivre {0}", "{0} n'est plus suivi.", "Fermer", "Sites que vous ne suivez pas", "Aucun temps n'est enregistré sur ces sites.", "Afficher",
@@ -46,7 +46,7 @@ internal static partial class Strings
         },
         ["es"] = new[]
         {
-            "Estado", "Nada todavía. El tiempo con una página delante en Chrome, Edge, Firefox, Brave, Vivaldi u Opera aparece aquí.", "Deshacer", "El modo estricto está apagado",
+            "Estado", "Nada todavía. El tiempo con una app, un juego o una página web delante aparece aquí.", "Deshacer", "El modo estricto está apagado",
             "Hoy", "Activar", "2 horas", "Hasta las {0}", "Más opciones", "Activando el modo estricto…",
             "Bloquear {0}", "Siempre", "Tras {0} min por hora", "Bloquear esta parte", "El resto de {0}", "Limitado · {0}",
             "Está bien. Dejar de registrar {0}", "{0} ya no se registra.", "Cerrar", "Sitios que no registras", "No se registra tiempo en estos sitios.", "Mostrar",
@@ -54,7 +54,7 @@ internal static partial class Strings
         },
         ["it"] = new[]
         {
-            "Stato", "Ancora niente oggi. Il tempo con una pagina in primo piano in Chrome, Edge, Firefox, Brave, Vivaldi o Opera compare qui.", "Annulla", "La modalità rigida è spenta",
+            "Stato", "Ancora niente oggi. Il tempo con un'app, un gioco o una pagina web in primo piano compare qui.", "Annulla", "La modalità rigida è spenta",
             "Oggi", "Attiva", "2 ore", "Fino alle {0}", "Altre opzioni", "Attivazione della modalità rigida…",
             "Blocca {0}", "Sempre", "Dopo {0} min all'ora", "Blocca questa parte", "Il resto di {0}", "Limitato · {0}",
             "Va bene. Non tracciare più {0}", "{0} non viene più tracciato.", "Chiudi", "Siti che non tracci", "Su questi siti non viene registrato alcun tempo.", "Mostra",
@@ -62,7 +62,7 @@ internal static partial class Strings
         },
         ["pt"] = new[]
         {
-            "Estado", "Ainda nada hoje. O tempo com uma página à frente no Chrome, Edge, Firefox, Brave, Vivaldi ou Opera aparece aqui.", "Desfazer", "O modo estrito está desligado",
+            "Estado", "Ainda nada hoje. O tempo com uma app, um jogo ou uma página web à frente aparece aqui.", "Desfazer", "O modo estrito está desligado",
             "Hoje", "Ativar", "2 horas", "Até às {0}", "Mais opções", "A ativar o modo rigoroso…",
             "Bloquear {0}", "Sempre", "Após {0} min por hora", "Bloquear esta parte", "O resto de {0}", "Limitado · {0}",
             "Está tudo bem. Deixar de registar {0}", "{0} já não é registado.", "Fechar", "Sites que não regista", "Não é registado tempo nestes sites.", "Mostrar",
@@ -70,7 +70,7 @@ internal static partial class Strings
         },
         ["nl"] = new[]
         {
-            "Status", "Vandaag nog niets. Tijd met een pagina op de voorgrond in Chrome, Edge, Firefox, Brave, Vivaldi of Opera verschijnt hier.", "Ongedaan maken", "Strikte modus staat uit",
+            "Status", "Vandaag nog niets. Tijd met een app, game of webpagina op de voorgrond verschijnt hier.", "Ongedaan maken", "Strikte modus staat uit",
             "Vandaag", "Inschakelen", "2 uur", "Tot {0}", "Meer opties", "Strikte modus wordt ingeschakeld…",
             "{0} blokkeren", "Altijd", "Na {0} min per uur", "Dit deel blokkeren", "De rest van {0}", "Beperkt · {0}",
             "Is prima. {0} niet meer bijhouden", "{0} wordt niet meer bijgehouden.", "Sluiten", "Sites die je niet bijhoudt", "Op deze sites wordt geen tijd vastgelegd.", "Tonen",
@@ -78,7 +78,7 @@ internal static partial class Strings
         },
         ["pl"] = new[]
         {
-            "Stan", "Dziś jeszcze nic. Czas ze stroną na pierwszym planie w Chrome, Edge, Firefox, Brave, Vivaldi lub Opera pojawi się tutaj.", "Cofnij", "Tryb ścisły jest wyłączony",
+            "Stan", "Dziś jeszcze nic. Czas z aplikacją, grą lub stroną na pierwszym planie pojawi się tutaj.", "Cofnij", "Tryb ścisły jest wyłączony",
             "Dziś", "Włącz", "2 godziny", "Do {0}", "Więcej opcji", "Włączanie trybu rygorystycznego…",
             "Zablokuj {0}", "Zawsze", "Po {0} min na godzinę", "Zablokuj tę część", "Reszta {0}", "Ograniczone · {0}",
             "W porządku. Nie śledź już {0}", "{0} nie jest już śledzone.", "Zamknij", "Witryny, których nie śledzisz", "Na tych witrynach czas nie jest zapisywany.", "Pokaż",
@@ -86,7 +86,7 @@ internal static partial class Strings
         },
         ["sv"] = new[]
         {
-            "Status", "Inget än i dag. Tid med en sida i förgrunden i Chrome, Edge, Firefox, Brave, Vivaldi eller Opera visas här.", "Ångra", "Strikt läge är av",
+            "Status", "Inget än i dag. Tid med en app, ett spel eller en webbsida i förgrunden visas här.", "Ångra", "Strikt läge är av",
             "I dag", "Slå på", "2 timmar", "Till {0}", "Fler alternativ", "Strikt läge aktiveras…",
             "Blockera {0}", "Alltid", "Efter {0} min per timme", "Blockera den här delen", "Resten av {0}", "Begränsad · {0}",
             "Det är okej. Sluta spåra {0}", "{0} spåras inte längre.", "Stäng", "Webbplatser du inte spårar", "Ingen tid registreras på de här webbplatserna.", "Visa",
@@ -94,7 +94,7 @@ internal static partial class Strings
         },
         ["da"] = new[]
         {
-            "Status", "Intet endnu i dag. Tid med en side i forgrunden i Chrome, Edge, Firefox, Brave, Vivaldi eller Opera vises her.", "Fortryd", "Streng tilstand er slået fra",
+            "Status", "Intet endnu i dag. Tid med en app, et spil eller en webside i forgrunden vises her.", "Fortryd", "Streng tilstand er slået fra",
             "I dag", "Slå til", "2 timer", "Indtil {0}", "Flere muligheder", "Streng tilstand aktiveres…",
             "Bloker {0}", "Altid", "Efter {0} min i timen", "Bloker denne del", "Resten af {0}", "Begrænset · {0}",
             "Det er fint. Stop med at spore {0}", "{0} spores ikke længere.", "Luk", "Websteder, du ikke sporer", "Der registreres ingen tid på disse websteder.", "Vis",
@@ -102,7 +102,7 @@ internal static partial class Strings
         },
         ["fi"] = new[]
         {
-            "Tila", "Ei vielä mitään tänään. Aika, jolloin sivu on edessä Chromessa, Edgessä, Firefoxissa, Bravessa, Vivaldissa tai Operassa, näkyy tässä.", "Kumoa", "Tiukka tila on pois päältä",
+            "Tila", "Ei vielä mitään tänään. Aika, jolloin sovellus, peli tai verkkosivu on edessä, näkyy tässä.", "Kumoa", "Tiukka tila on pois päältä",
             "Tänään", "Ota käyttöön", "2 tuntia", "Klo {0} asti", "Lisää vaihtoehtoja", "Tiukkaa tilaa otetaan käyttöön…",
             "Estä {0}", "Aina", "{0} min jälkeen tunnissa", "Estä tämä osa", "Muu osa: {0}", "Rajoitettu · {0}",
             "Se on ok. Lopeta sivuston {0} seuranta", "Sivustoa {0} ei enää seurata.", "Sulje", "Sivustot, joita et seuraa", "Näillä sivustoilla aikaa ei tallenneta.", "Näytä",
@@ -110,7 +110,7 @@ internal static partial class Strings
         },
         ["cs"] = new[]
         {
-            "Stav", "Dnes zatím nic. Čas se stránkou v popředí v Chrome, Edge, Firefox, Brave, Vivaldi nebo Opera se zobrazí zde.", "Zpět", "Přísný režim je vypnutý",
+            "Stav", "Dnes zatím nic. Čas s aplikací, hrou nebo webovou stránkou v popředí se zobrazí zde.", "Zpět", "Přísný režim je vypnutý",
             "Dnes", "Zapnout", "2 hodiny", "Do {0}", "Další možnosti", "Přísný režim se zapíná…",
             "Blokovat {0}", "Vždy", "Po {0} min za hodinu", "Blokovat tuto část", "Zbytek {0}", "Omezeno · {0}",
             "Je to v pořádku. Přestat sledovat {0}", "{0} se už nesleduje.", "Zavřít", "Weby, které nesledujete", "Na těchto webech se čas nezaznamenává.", "Zobrazit",
@@ -118,7 +118,7 @@ internal static partial class Strings
         },
         ["sk"] = new[]
         {
-            "Stav", "Dnes zatiaľ nič. Čas so stránkou v popredí v Chrome, Edge, Firefox, Brave, Vivaldi alebo Opera sa zobrazí tu.", "Späť", "Prísny režim je vypnutý",
+            "Stav", "Dnes zatiaľ nič. Čas s aplikáciou, hrou alebo webovou stránkou v popredí sa zobrazí tu.", "Späť", "Prísny režim je vypnutý",
             "Dnes", "Zapnúť", "2 hodiny", "Do {0}", "Ďalšie možnosti", "Prísny režim sa zapína…",
             "Blokovať {0}", "Vždy", "Po {0} min za hodinu", "Blokovať túto časť", "Zvyšok {0}", "Obmedzené · {0}",
             "Je to v poriadku. Prestať sledovať {0}", "{0} sa už nesleduje.", "Zavrieť", "Weby, ktoré nesledujete", "Na týchto weboch sa čas nezaznamenáva.", "Zobraziť",
@@ -126,7 +126,7 @@ internal static partial class Strings
         },
         ["sl"] = new[]
         {
-            "Stanje", "Danes še nič. Čas s stranjo v ospredju v Chromu, Edgeu, Firefoxu, Bravu, Vivaldiju ali Operi se prikaže tukaj.", "Razveljavi", "Strogi način je izklopljen",
+            "Stanje", "Danes še nič. Čas z aplikacijo, igro ali spletno stranjo v ospredju se prikaže tukaj.", "Razveljavi", "Strogi način je izklopljen",
             "Danes", "Vklopi", "2 uri", "Do {0}", "Več možnosti", "Strogi način se vklaplja…",
             "Blokiraj {0}", "Vedno", "Po {0} min na uro", "Blokiraj ta del", "Preostanek {0}", "Omejeno · {0}",
             "V redu je. Ne spremljaj več {0}", "{0} se ne spremlja več.", "Zapri", "Spletna mesta, ki jih ne spremljate", "Na teh spletnih mestih se čas ne beleži.", "Pokaži",
@@ -134,7 +134,7 @@ internal static partial class Strings
         },
         ["hr"] = new[]
         {
-            "Stanje", "Danas još ništa. Vrijeme sa stranicom u prvom planu u Chromeu, Edgeu, Firefoxu, Braveu, Vivaldiju ili Operi prikazuje se ovdje.", "Poništi", "Strogi način je isključen",
+            "Stanje", "Danas još ništa. Vrijeme s aplikacijom, igrom ili web-stranicom u prvom planu prikazuje se ovdje.", "Poništi", "Strogi način je isključen",
             "Danas", "Uključi", "2 sata", "Do {0}", "Više mogućnosti", "Strogi način se uključuje…",
             "Blokiraj {0}", "Uvijek", "Nakon {0} min na sat", "Blokiraj ovaj dio", "Ostatak {0}", "Ograničeno · {0}",
             "U redu je. Prestani pratiti {0}", "{0} se više ne prati.", "Zatvori", "Web-mjesta koja ne pratite", "Na ovim web-mjestima vrijeme se ne bilježi.", "Prikaži",
@@ -142,7 +142,7 @@ internal static partial class Strings
         },
         ["ro"] = new[]
         {
-            "Stare", "Nimic încă azi. Timpul cu o pagină în prim-plan în Chrome, Edge, Firefox, Brave, Vivaldi sau Opera apare aici.", "Anulează", "Modul strict este oprit",
+            "Stare", "Nimic încă azi. Timpul cu o aplicație, un joc sau o pagină web în prim-plan apare aici.", "Anulează", "Modul strict este oprit",
             "Azi", "Pornește", "2 ore", "Până la {0}", "Mai multe opțiuni", "Modul strict se activează…",
             "Blochează {0}", "Mereu", "După {0} min pe oră", "Blochează această parte", "Restul din {0}", "Limitat · {0}",
             "E în regulă. Nu mai urmări {0}", "{0} nu mai este urmărit.", "Închide", "Site-uri pe care nu le urmărești", "Pe aceste site-uri nu se înregistrează timp.", "Arată",
@@ -150,7 +150,7 @@ internal static partial class Strings
         },
         ["hu"] = new[]
         {
-            "Állapot", "Ma még semmi. Az idő, amikor egy oldal elöl van a Chrome-ban, Edge-ben, Firefoxban, Brave-ben, Vivaldiban vagy Operában, itt jelenik meg.", "Visszavonás", "A szigorú mód ki van kapcsolva",
+            "Állapot", "Ma még semmi. Az idő, amikor egy alkalmazás, játék vagy weboldal van elöl, itt jelenik meg.", "Visszavonás", "A szigorú mód ki van kapcsolva",
             "Ma", "Bekapcsolás", "2 óra", "{0}-ig", "További lehetőségek", "A szigorú mód bekapcsol…",
             "{0} tiltása", "Mindig", "Óránként {0} perc után", "Ennek a résznek a tiltása", "A(z) {0} többi része", "Korlátozva · {0}",
             "Rendben van. {0} követésének leállítása", "A(z) {0} már nincs követve.", "Bezárás", "Oldalak, amelyeket nem követsz", "Ezeken az oldalakon nem rögzítünk időt.", "Megjelenítés",
@@ -158,7 +158,7 @@ internal static partial class Strings
         },
         ["el"] = new[]
         {
-            "Κατάσταση", "Τίποτα ακόμη σήμερα. Ο χρόνος με μια σελίδα μπροστά σε Chrome, Edge, Firefox, Brave, Vivaldi ή Opera εμφανίζεται εδώ.", "Αναίρεση", "Η αυστηρή λειτουργία είναι ανενεργή",
+            "Κατάσταση", "Τίποτα ακόμη σήμερα. Ο χρόνος με μια εφαρμογή, ένα παιχνίδι ή μια ιστοσελίδα μπροστά εμφανίζεται εδώ.", "Αναίρεση", "Η αυστηρή λειτουργία είναι ανενεργή",
             "Σήμερα", "Ενεργοποίηση", "2 ώρες", "Έως τις {0}", "Περισσότερες επιλογές", "Η αυστηρή λειτουργία ενεργοποιείται…",
             "Αποκλεισμός {0}", "Πάντα", "Μετά από {0} λεπ. την ώρα", "Αποκλεισμός αυτού του μέρους", "Το υπόλοιπο του {0}", "Περιορισμένο · {0}",
             "Είναι εντάξει. Διακοπή καταγραφής του {0}", "Το {0} δεν καταγράφεται πλέον.", "Κλείσιμο", "Ιστότοποι που δεν καταγράφετε", "Σε αυτούς τους ιστότοπους δεν καταγράφεται χρόνος.", "Εμφάνιση",
@@ -166,7 +166,7 @@ internal static partial class Strings
         },
         ["bg"] = new[]
         {
-            "Състояние", "Днес още нищо. Времето със страница отпред в Chrome, Edge, Firefox, Brave, Vivaldi или Opera се показва тук.", "Отмяна", "Строгият режим е изключен",
+            "Състояние", "Днес още нищо. Времето с приложение, игра или уеб страница отпред се показва тук.", "Отмяна", "Строгият режим е изключен",
             "Днес", "Включи", "2 часа", "До {0}", "Още опции", "Строгият режим се включва…",
             "Блокирай {0}", "Винаги", "След {0} мин на час", "Блокирай тази част", "Останалото от {0}", "Ограничено · {0}",
             "Наред е. Спри да следиш {0}", "{0} вече не се следи.", "Затвори", "Сайтове, които не следите", "На тези сайтове не се записва време.", "Покажи",
@@ -174,7 +174,7 @@ internal static partial class Strings
         },
         ["lt"] = new[]
         {
-            "Būsena", "Šiandien dar nieko. Laikas, kai puslapis priekyje Chrome, Edge, Firefox, Brave, Vivaldi ar Opera, rodomas čia.", "Atšaukti", "Griežtasis režimas išjungtas",
+            "Būsena", "Šiandien dar nieko. Laikas, kai priekyje programa, žaidimas ar tinklalapis, rodomas čia.", "Atšaukti", "Griežtasis režimas išjungtas",
             "Šiandien", "Įjungti", "2 valandos", "Iki {0}", "Daugiau parinkčių", "Griežtas režimas įjungiamas…",
             "Blokuoti {0}", "Visada", "Po {0} min per valandą", "Blokuoti šią dalį", "Likusi {0} dalis", "Apribota · {0}",
             "Viskas gerai. Nebesekti {0}", "{0} nebesekama.", "Uždaryti", "Svetainės, kurių nesekate", "Šiose svetainėse laikas neįrašomas.", "Rodyti",
@@ -182,7 +182,7 @@ internal static partial class Strings
         },
         ["lv"] = new[]
         {
-            "Statuss", "Šodien vēl nekā. Laiks, kad lapa ir priekšplānā Chrome, Edge, Firefox, Brave, Vivaldi vai Opera, tiek rādīts šeit.", "Atsaukt", "Stingrais režīms ir izslēgts",
+            "Statuss", "Šodien vēl nekā. Laiks, kad priekšplānā ir lietotne, spēle vai tīmekļa lapa, tiek rādīts šeit.", "Atsaukt", "Stingrais režīms ir izslēgts",
             "Šodien", "Ieslēgt", "2 stundas", "Līdz {0}", "Citas iespējas", "Stingrais režīms tiek ieslēgts…",
             "Bloķēt {0}", "Vienmēr", "Pēc {0} min stundā", "Bloķēt šo daļu", "Pārējais no {0}", "Ierobežots · {0}",
             "Viss kārtībā. Pārtraukt sekot {0}", "{0} vairs netiek izsekots.", "Aizvērt", "Vietnes, kurām nesekojat", "Šajās vietnēs laiks netiek reģistrēts.", "Rādīt",
@@ -190,7 +190,7 @@ internal static partial class Strings
         },
         ["et"] = new[]
         {
-            "Olek", "Täna veel midagi pole. Aeg, mil leht on Chrome'is, Edge'is, Firefoxis, Brave'is, Vivaldis või Operas ees, kuvatakse siin.", "Võta tagasi", "Range režiim on väljas",
+            "Olek", "Täna veel midagi pole. Aeg, mil rakendus, mäng või veebileht on ees, kuvatakse siin.", "Võta tagasi", "Range režiim on väljas",
             "Täna", "Lülita sisse", "2 tundi", "Kuni {0}", "Rohkem valikuid", "Range režiim lülitub sisse…",
             "Blokeeri {0}", "Alati", "Pärast {0} min tunnis", "Blokeeri see osa", "Ülejäänud {0}", "Piiratud · {0}",
             "Kõik on korras. Lõpeta {0} jälgimine", "{0} ei jälgita enam.", "Sulge", "Saidid, mida sa ei jälgi", "Nendel saitidel aega ei salvestata.", "Näita",
@@ -198,7 +198,7 @@ internal static partial class Strings
         },
         ["ga"] = new[]
         {
-            "Stádas", "Faic fós inniu. Taispeántar anseo an t-am le leathanach chun tosaigh in Chrome, Edge, Firefox, Brave, Vivaldi nó Opera.", "Cealaigh", "Tá an mód docht múchta",
+            "Stádas", "Faic fós inniu. Taispeántar anseo an t-am le haip, cluiche nó leathanach gréasáin chun tosaigh.", "Cealaigh", "Tá an mód docht múchta",
             "Inniu", "Cas air", "2 uair an chloig", "Go dtí {0}", "Tuilleadh roghanna", "Tá an mód dian á chur ar siúl…",
             "Blocáil {0}", "I gcónaí", "Tar éis {0} nóim san uair", "Blocáil an chuid seo", "An chuid eile de {0}", "Teoranta · {0}",
             "Tá sé ceart go leor. Stop ag rianú {0}", "Ní rianaítear {0} a thuilleadh.", "Dún", "Suíomhanna nach rianaíonn tú", "Ní thaifeadtar am ar na suíomhanna seo.", "Taispeáin",
@@ -206,7 +206,7 @@ internal static partial class Strings
         },
         ["mt"] = new[]
         {
-            "Status", "Xejn s'issa llum. Il-ħin b'paġna quddiem f'Chrome, Edge, Firefox, Brave, Vivaldi jew Opera jidher hawn.", "Ħassar", "Il-modalità stretta hija mitfija",
+            "Status", "Xejn s'issa llum. Il-ħin b'app, logħba jew paġna web quddiem jidher hawn.", "Ħassar", "Il-modalità stretta hija mitfija",
             "Illum", "Ixgħel", "Sagħtejn", "Sa {0}", "Aktar għażliet", "Il-modalità stretta qed tinxtegħel…",
             "Imblokka {0}", "Dejjem", "Wara {0} min fis-siegħa", "Imblokka din il-parti", "Il-bqija ta' {0}", "Limitat · {0}",
             "Kollox sew. Tibqax issegwi {0}", "{0} m'għadux segwit.", "Agħlaq", "Siti li ma ssegwix", "Ma jiġi rreġistrat l-ebda ħin fuq dawn is-siti.", "Uri",
@@ -214,7 +214,7 @@ internal static partial class Strings
         },
         ["ca"] = new[]
         {
-            "Estat", "Encara res avui. El temps amb una pàgina al davant a Chrome, Edge, Firefox, Brave, Vivaldi o Opera apareix aquí.", "Desfés", "El mode estricte està apagat",
+            "Estat", "Encara res avui. El temps amb una aplicació, un joc o una pàgina web al davant apareix aquí.", "Desfés", "El mode estricte està apagat",
             "Avui", "Activa", "2 hores", "Fins a les {0}", "Més opcions", "S'està activant el mode estricte…",
             "Bloqueja {0}", "Sempre", "Després de {0} min per hora", "Bloqueja aquesta part", "La resta de {0}", "Limitat · {0}",
             "Està bé. Deixa de registrar {0}", "{0} ja no es registra.", "Tanca", "Llocs que no registres", "No es registra temps en aquests llocs.", "Mostra",
@@ -222,7 +222,7 @@ internal static partial class Strings
         },
         ["nb"] = new[]
         {
-            "Status", "Ingenting ennå i dag. Tid med en side i forgrunnen i Chrome, Edge, Firefox, Brave, Vivaldi eller Opera vises her.", "Angre", "Streng modus er av",
+            "Status", "Ingenting ennå i dag. Tid med en app, et spill eller en nettside i forgrunnen vises her.", "Angre", "Streng modus er av",
             "I dag", "Slå på", "2 timer", "Til {0}", "Flere alternativer", "Streng modus slås på…",
             "Blokker {0}", "Alltid", "Etter {0} min i timen", "Blokker denne delen", "Resten av {0}", "Begrenset · {0}",
             "Det er greit. Slutt å spore {0}", "{0} spores ikke lenger.", "Lukk", "Nettsteder du ikke sporer", "Ingen tid registreres på disse nettstedene.", "Vis",
@@ -230,7 +230,7 @@ internal static partial class Strings
         },
         ["tr"] = new[]
         {
-            "Durum", "Bugün henüz bir şey yok. Chrome, Edge, Firefox, Brave, Vivaldi veya Opera'da önde bir sayfayla geçen süre burada görünür.", "Geri al", "Katı mod kapalı",
+            "Durum", "Bugün henüz bir şey yok. Önde bir uygulama, oyun veya web sayfasıyla geçen süre burada görünür.", "Geri al", "Katı mod kapalı",
             "Bugün", "Aç", "2 saat", "{0} saatine kadar", "Daha fazla seçenek", "Katı mod açılıyor…",
             "{0} engelle", "Her zaman", "Saatte {0} dk sonra", "Bu bölümü engelle", "{0} sitesinin geri kalanı", "Sınırlı · {0}",
             "Sorun değil. {0} takibini bırak", "{0} artık takip edilmiyor.", "Kapat", "Takip etmediğin siteler", "Bu sitelerde süre kaydedilmez.", "Göster",
@@ -238,7 +238,7 @@ internal static partial class Strings
         },
         ["ru"] = new[]
         {
-            "Статус", "Сегодня пока ничего. Время со страницей на переднем плане в Chrome, Edge, Firefox, Brave, Vivaldi или Opera появится здесь.", "Отменить", "Строгий режим выключен",
+            "Статус", "Сегодня пока ничего. Время с приложением, игрой или веб-страницей на переднем плане появится здесь.", "Отменить", "Строгий режим выключен",
             "Сегодня", "Включить", "2 часа", "До {0}", "Другие варианты", "Строгий режим включается…",
             "Блокировать {0}", "Всегда", "После {0} мин в час", "Блокировать эту часть", "Остальное на {0}", "Ограничено · {0}",
             "Всё в порядке. Не отслеживать {0}", "{0} больше не отслеживается.", "Закрыть", "Сайты, которые вы не отслеживаете", "На этих сайтах время не записывается.", "Показать",
@@ -246,7 +246,7 @@ internal static partial class Strings
         },
         ["uk"] = new[]
         {
-            "Стан", "Сьогодні поки нічого. Час зі сторінкою на передньому плані в Chrome, Edge, Firefox, Brave, Vivaldi чи Opera з'явиться тут.", "Скасувати", "Суворий режим вимкнено",
+            "Стан", "Сьогодні поки нічого. Час із застосунком, грою чи вебсторінкою на передньому плані з'явиться тут.", "Скасувати", "Суворий режим вимкнено",
             "Сьогодні", "Увімкнути", "2 години", "До {0}", "Інші варіанти", "Суворий режим вмикається…",
             "Блокувати {0}", "Завжди", "Після {0} хв на годину", "Блокувати цю частину", "Решта на {0}", "Обмежено · {0}",
             "Усе гаразд. Не відстежувати {0}", "{0} більше не відстежується.", "Закрити", "Сайти, які ви не відстежуєте", "На цих сайтах час не записується.", "Показати",
@@ -254,7 +254,7 @@ internal static partial class Strings
         },
         ["bs"] = new[]
         {
-            "Stanje", "Danas još ništa. Vrijeme sa stranicom u prvom planu u Chromeu, Edgeu, Firefoxu, Braveu, Vivaldiju ili Operi prikazuje se ovdje.", "Poništi", "Strogi način je isključen",
+            "Stanje", "Danas još ništa. Vrijeme s aplikacijom, igrom ili web-stranicom u prvom planu prikazuje se ovdje.", "Poništi", "Strogi način je isključen",
             "Danas", "Uključi", "2 sata", "Do {0}", "Više opcija", "Strogi način se uključuje…",
             "Blokiraj {0}", "Uvijek", "Nakon {0} min na sat", "Blokiraj ovaj dio", "Ostatak {0}", "Ograničeno · {0}",
             "U redu je. Prestani pratiti {0}", "{0} se više ne prati.", "Zatvori", "Stranice koje ne pratite", "Na ovim stranicama vrijeme se ne bilježi.", "Prikaži",
@@ -262,7 +262,7 @@ internal static partial class Strings
         },
         ["sr"] = new[]
         {
-            "Стање", "Данас још ништа. Време са страницом у првом плану у Chrome-у, Edge-у, Firefox-у, Brave-у, Vivaldi-ју или Opera-и приказује се овде.", "Поништи", "Строги режим је искључен",
+            "Стање", "Данас још ништа. Време са апликацијом, игром или веб-страницом у првом плану приказује се овде.", "Поништи", "Строги режим је искључен",
             "Данас", "Укључи", "2 сата", "До {0}", "Још опција", "Строги режим се укључује…",
             "Блокирај {0}", "Увек", "После {0} мин на сат", "Блокирај овај део", "Остатак {0}", "Ограничено · {0}",
             "У реду је. Престани да пратиш {0}", "{0} се више не прати.", "Затвори", "Сајтови које не пратите", "На овим сајтовима време се не бележи.", "Прикажи",

@@ -15,8 +15,12 @@ internal sealed class AppStatus
         StrictModeSnapshot strictMode,
         PauseState? pause,
         string? lastError,
-        ActivityRecord? activity = null)
+        ActivityRecord? activity = null,
+        IReadOnlyList<ObservedApp>? apps = null,
+        IReadOnlyList<HeadsUp>? headsUps = null)
     {
+        Apps = apps ?? Array.Empty<ObservedApp>();
+        HeadsUps = headsUps ?? Array.Empty<HeadsUp>();
         Activity = activity ?? new ActivityRecord();
         UpdatedAt = updatedAt;
         IsRunning = isRunning;
@@ -43,8 +47,14 @@ internal sealed class AppStatus
     public StrictModeSnapshot StrictMode { get; }
     public string? LastError { get; }
 
-    /// <summary>Today's browsing statistics: totals per place, never a history.</summary>
+    /// <summary>Today's statistics: totals per place and per app, never a history.</summary>
     public ActivityRecord Activity { get; }
+
+    /// <summary>The apps with a shown window right now.</summary>
+    public IReadOnlyList<ObservedApp> Apps { get; }
+
+    /// <summary>Open apps a block will close within a minute.</summary>
+    public IReadOnlyList<HeadsUp> HeadsUps { get; }
 }
 
 internal sealed class CloseEvent

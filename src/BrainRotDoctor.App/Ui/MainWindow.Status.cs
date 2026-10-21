@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Threading;
 using BrainRotDoctor.App.Runtime;
 using BrainRotDoctor.Core.Activity;
+using BrainRotDoctor.Core.Apps;
 using BrainRotDoctor.Core.Configuration;
 using BrainRotDoctor.DesignSystem;
 
@@ -19,9 +20,16 @@ internal sealed partial class MainWindow
     /// <summary>The map shows at most this many sites; the rest are too small to see anyway.</summary>
     private const int MappedSites = 12;
 
+    /// <summary>"At night" from the block menu: the hours a new rule blocks.</summary>
+    private static readonly TimeOnly NightFrom = new(22, 0);
+    private static readonly TimeOnly NightTo = new(7, 0);
+
     private HashSet<string>? _untracked;
+    private Dictionary<string, string>? _untrackedApps;
     private string? _openSite;
+    private string? _openApp;
     private string? _justUntracked;
+    private (string Key, string Name)? _justUntrackedApp;
     private DispatcherTimer? _activation;
 
     // Blocks made from the status view in this session, by the place they block: the rule
@@ -31,22 +39,27 @@ internal sealed partial class MainWindow
     private Control StatusScreen()
     {
         Control screen = WithSidebar(BuildStatusPage(), scrolls: false);
-        if (_openSite is null)
+        if (_openSite is null && _openApp is null)
         {
             return screen;
         }
 
-        ActivitySite? site = ActivityReport.Build(_status.Activity).Sites.FirstOrDefault(s => s.Host == _openSite);
-        if (site is null)
+        ActivityReport report = ActivityReport.Build(_status.Activity);
+        Control? sheet = _openSite is not null
+            ? report.Sites.FirstOrDefault(s => s.Host == _openSite) is { } site ? SiteSheet(site) : null
+            : report.Apps.FirstOrDefault(a => a.Key == _openApp) is { } app ? AppSheet(app) : null;
+        if (sheet is null)
         {
             _openSite = null;
+            _openApp = null;
             return screen;
         }
 
-        var overlay = new Overlay(screen, SiteSheet(site));
+        var overlay = new Overlay(screen, sheet);
         overlay.Dismissed += (_, _) =>
         {
             _openSite = null;
+            _openApp = null;
             Rerender();
         };
         return overlay;
@@ -63,10 +76,14 @@ internal sealed partial class MainWindow
         top.Children.Add(StrictBar());
         if (_justUntracked is { } host)
         {
-            top.Children.Add(UntrackedNote(host));
+            top.Children.Add(UntrackedNote(host, () => SetTracked(host, true)));
+        }
+        else if (_justUntrackedApp is { } app)
+        {
+            top.Children.Add(UntrackedNote(app.Name, () => SetAppTracked(app.Key, app.Name, true)));
         }
 
-        if (Untracked().Count > 0 || ActivityReport.Build(_status.Activity).Okay > TimeSpan.Zero)
+        if (Untracked().Count > 0 || UntrackedApps().Count > 0 || ActivityReport.Build(_status.Activity).Okay > TimeSpan.Zero)
         {
             top.Children.Add(ShowEverythingOption());
         }
@@ -220,13 +237,13 @@ internal sealed partial class MainWindow
     // ----- The map -----
 
     /// <summary>
-    /// Today's sites by time. With everything shown, the okay sites join as one grey
-    /// tile in its place by size: how much of the day they take, nothing about which.
+    /// Today's sites and apps by time. With everything shown, the okay ones join as one
+    /// grey tile in its place by size: how much of the day they take, nothing about which.
     /// </summary>
     private Control SiteMap(ActivityReport report, bool everything)
     {
         bool okay = everything && report.Okay >= ActivityReport.SiteMinimum;
-        if (report.Sites.Count == 0 && !okay)
+        if (report.Sites.Count == 0 && report.Apps.Count == 0 && !okay)
         {
             return new Card(new TextLine(Loc.T("no_browsing_yet"), TextStyle.Small) { MaxWidth = 420 }, CardStyle.Outline, CardPadding.Roomy)
             {
@@ -246,13 +263,34 @@ internal sealed partial class MainWindow
             }
         }
 
-        for (int i = 0; i < Math.Min(MappedSites, report.Sites.Count); i++)
+        var shown = report.Sites.Select(s => (s.Time, Site: (ActivitySite?)s, App: (ActivityApp?)null))
+            .Concat(report.Apps.Select(a => (a.Time, Site: (ActivitySite?)null, App: (ActivityApp?)a)))
+            .OrderByDescending(e => e.Time)
+            .Take(MappedSites)
+            .ToList();
+        for (int i = 0; i < shown.Count; i++)
         {
-            ActivitySite site = report.Sites[i];
-            if (site.Time < report.Okay)
+            if (shown[i].Time < report.Okay)
             {
                 AddOkay();
             }
+
+            if (shown[i].App is { } app)
+            {
+                var appTile = new MapTile(app.App.Name, i, app.Time, badge: RulesBadge(RulesOn(app.App).Select(r => r.Rule)));
+                ToolTip.SetTip(appTile, $"{app.App.Name} · {AppCaption(app.App)} · {Minutes(app.Time)}");
+                appTile.Click += (_, _) =>
+                {
+                    _openApp = app.Key;
+                    _justUntracked = null;
+                    _justUntrackedApp = null;
+                    Rerender();
+                };
+                map.Add(appTile, app.Time.TotalSeconds);
+                continue;
+            }
+
+            ActivitySite site = shown[i].Site!;
 
             TileMap? parts = null;
             if (site.Places.Count > 1)
@@ -266,12 +304,13 @@ internal sealed partial class MainWindow
                 }
             }
 
-            var tile = new MapTile(site.Host, i, site.Time, parts, badge: RulesBadge(site.Host));
+            var tile = new MapTile(site.Host, i, site.Time, parts, badge: RulesBadge(RulesOn(site.Host).Select(r => r.Rule)));
             ToolTip.SetTip(tile, $"{site.Host} · {Minutes(site.Time)}");
             tile.Click += (_, _) =>
             {
                 _openSite = site.Host;
                 _justUntracked = null;
+                _justUntrackedApp = null;
                 Rerender();
             };
             map.Add(tile, site.Time.TotalSeconds);
@@ -281,10 +320,10 @@ internal sealed partial class MainWindow
         return map;
     }
 
-    /// <summary>"Limited · Feeds" (or "Feeds +1") on a site some switched-on rule limits, any part of it.</summary>
-    private Control? RulesBadge(string host)
+    /// <summary>"Limited · Feeds" (or "Feeds +1") on a site or app some switched-on rule limits, any part of it.</summary>
+    private static Control? RulesBadge(IEnumerable<EditableConfiguration.EditableRule> rules)
     {
-        List<string> names = RulesOn(host).Where(r => r.Rule.Enabled).Select(r => RuleName(r.Rule)).Distinct().ToList();
+        List<string> names = rules.Where(r => r.Enabled).Select(RuleName).Distinct().ToList();
         if (names.Count == 0)
         {
             return null;
@@ -300,7 +339,8 @@ internal sealed partial class MainWindow
     private static string Signature(ActivityReport report, bool everything) =>
         (everything ? $"okay:{(int)report.Okay.TotalMinutes};" : "") +
         string.Join(";", report.Sites.Take(MappedSites).Select(s =>
-            $"{s.Host}:{(int)s.Time.TotalMinutes}:" + string.Join(",", s.Places.Select(p => $"{p.Path}={(int)p.Time.TotalMinutes}"))));
+            $"{s.Host}:{(int)s.Time.TotalMinutes}:" + string.Join(",", s.Places.Select(p => $"{p.Path}={(int)p.Time.TotalMinutes}")))) +
+        "|" + string.Join(";", report.Apps.Take(MappedSites).Select(a => $"{a.Key}:{(int)a.Time.TotalMinutes}"));
 
     private bool? _showEverything;
 
@@ -357,7 +397,7 @@ internal sealed partial class MainWindow
             StackPanel list = Layout.Column(Space.S2, new TextLine(Loc.T("in_your_rules"), TextStyle.Overline));
             foreach ((EditableConfiguration.EditableRule rule, int index, EditableConfiguration.EditableSite target) in touching)
             {
-                list.Children.Add(RuleRow(rule, index, target));
+                list.Children.Add(RuleRow(rule, index, BlockedSummary(target)));
             }
 
             body.Children.Add(list);
@@ -390,16 +430,150 @@ internal sealed partial class MainWindow
         return new Card(body, CardStyle.Surface, CardPadding.Spacious);
     }
 
-    /// <summary>"Block …" with its choices, or the rule that already limits this place.</summary>
-    private Control BlockAction(ActivitySite site, ActivityPlace place, BlockerConfiguration? rules, string label, ButtonKind kind)
+    // ----- One app, looked at closely -----
+
+    /// <summary>
+    /// An app's day, the rules it's in, and blocking it: the app itself, and for Steam
+    /// and its games all Steam games at once (the usual wish: no games at night).
+    /// </summary>
+    private Control AppSheet(ActivityApp app)
     {
-        if (CoveringRule(place, rules) is { } rule)
+        BlockerConfiguration? rules = CurrentRules();
+
+        var close = new IconButton(Glyph.Close, Loc.T("close"));
+        close.Click += (_, _) =>
         {
-            StackPanel limited = Layout.Row(Space.S2, new Icon(Glyph.Lock, 14, TextTone.Secondary), new TextLine(Loc.T("limited_by", rule), TextStyle.Small));
-            if (_madeBlocks.ContainsKey(place.Label) && !_status.StrictMode.IsActive)
+            _openApp = null;
+            Rerender();
+        };
+
+        var clocks = new ClockFill(app.Time, 26);
+        ToolTip.SetTip(clocks, Minutes(app.Time));
+        StackPanel title = Layout.Column(Space.S3,
+            Layout.Column(Space.S1, new TextLine(app.App.Name, TextStyle.Title), new TextLine(AppCaption(app.App), TextStyle.Small)),
+            clocks);
+        var head = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(close, Dock.Right);
+        close.VerticalAlignment = VerticalAlignment.Top;
+        head.Children.Add(close);
+        head.Children.Add(title);
+
+        StackPanel body = Layout.Column(Space.S5, head);
+        if (_status.Pause is { } pause)
+        {
+            body.Children.Add(SheetPausedNote(pause));
+        }
+
+        List<(EditableConfiguration.EditableRule Rule, int Index, EditableConfiguration.EditableApp App)> touching = RulesOn(app.App);
+        if (touching.Count > 0)
+        {
+            StackPanel list = Layout.Column(Space.S2, new TextLine(Loc.T("in_your_rules"), TextStyle.Overline));
+            foreach ((EditableConfiguration.EditableRule rule, int index, EditableConfiguration.EditableApp target) in touching)
+            {
+                list.Children.Add(RuleRow(rule, index, target.Kind == TargetAppKind.AllSteamGames ? AppLabel(target) : Loc.T("whole_app")));
+            }
+
+            body.Children.Add(list);
+        }
+
+        string label = Loc.T(app.App.Kind == AppKind.SteamGame ? "block_this_game" : "block_this_app");
+        StackPanel actions = Layout.Column(Space.S3, AppBlockAction(app.App, rules, label, ButtonKind.Primary, () => EditableConfiguration.EditableApp.For(app.App)));
+        if (app.App.Kind is AppKind.SteamGame or AppKind.Steam)
+        {
+            actions.Children.Add(AppBlockAction(AnySteamGame, rules, Loc.T("block_all_steam"), ButtonKind.Secondary, EditableConfiguration.EditableApp.AllSteamGames));
+        }
+
+        body.Children.Add(actions);
+
+        var stop = new PillButton(Loc.T("this_app_okay"), ButtonKind.Accent);
+        stop.Click += (_, _) => SetAppTracked(app.Key, app.App.Name, false);
+        body.Children.Add(Layout.Column(Space.S3, new Divider(), stop));
+
+        return new Card(body, CardStyle.Surface, CardPadding.Spacious);
+    }
+
+    /// <summary>A Steam game no rule names on its own, so only "All Steam games" covers it.</summary>
+    private static readonly AppIdentity AnySteamGame = new(AppKind.SteamGame, "", "", null, "\u0001");
+
+    /// <summary>"Block …" for an app with its choices, or the rule that already limits it.</summary>
+    private Control AppBlockAction(AppIdentity app, BlockerConfiguration? rules, string label, ButtonKind kind, Func<EditableConfiguration.EditableApp> entry)
+    {
+        EditableConfiguration.EditableApp probe = entry();
+        return BlockMenu(
+            label,
+            kind,
+            $"app:{AppDocument.KindText(probe.Kind)}:{probe.Folder ?? probe.Exe}",
+            rules?.MatchingRules(app).FirstOrDefault()?.Name,
+            RulesOn(app).Select(r => r.Rule.Id),
+            () =>
+            {
+                EditableConfiguration.EditableRule rule = NewRule();
+                EditableConfiguration.EditableApp added = entry();
+                rule.Name = AppLabel(added);
+                rule.Apps.Add(added);
+                return rule;
+            },
+            rule => rule.Block(entry()));
+    }
+
+    /// <summary>The rules that hold <paramref name="app"/>, switched off ones too, in their order.</summary>
+    private List<(EditableConfiguration.EditableRule Rule, int Index, EditableConfiguration.EditableApp App)> RulesOn(AppIdentity app)
+    {
+        var found = new List<(EditableConfiguration.EditableRule, int, EditableConfiguration.EditableApp)>();
+        for (int i = 0; i < _editable.Rules.Count; i++)
+        {
+            EditableConfiguration.EditableRule rule = _editable.Rules[i];
+            if (rule.Apps.FirstOrDefault(a => TargetOf(a)?.Matches(app) == true) is { } entry)
+            {
+                found.Add((rule, i, entry));
+            }
+        }
+
+        return found;
+    }
+
+    // ----- Blocking from a sheet -----
+
+    /// <summary>"Block …" for a site or a part of it, with its choices, or the rule that already limits it.</summary>
+    private Control BlockAction(ActivitySite site, ActivityPlace place, BlockerConfiguration? rules, string label, ButtonKind kind) =>
+        BlockMenu(
+            label,
+            kind,
+            place.Label,
+            CoveringRule(place, rules),
+            RulesOn(site.Host).Select(r => r.Rule.Id),
+            () => RuleFor(site, place),
+            rule => rule.Block(RuleFor(site, place).Sites[0]));
+
+    /// <summary>
+    /// The block button of a sheet. Its menu adds to a rule there is already (not in strict
+    /// mode, where rules can only be added) or saves a new rule at once: always, at night,
+    /// or after a few minutes an hour. Once a rule limits it: which one, and Undo for a
+    /// block made here.
+    /// </summary>
+    /// <param name="label">The button's text.</param>
+    /// <param name="kind">The button's kind.</param>
+    /// <param name="made">What a block made here is remembered by, for Undo.</param>
+    /// <param name="coveredBy">The name of the rule that limits it already, or null.</param>
+    /// <param name="here">The rules it is in already, offered first.</param>
+    /// <param name="newRule">A new rule holding just it.</param>
+    /// <param name="addTo">Adds it to a rule.</param>
+    private Control BlockMenu(
+        string label,
+        ButtonKind kind,
+        string made,
+        string? coveredBy,
+        IEnumerable<string> here,
+        Func<EditableConfiguration.EditableRule> newRule,
+        Action<EditableConfiguration.EditableRule> addTo)
+    {
+        if (coveredBy is not null)
+        {
+            StackPanel limited = Layout.Row(Space.S2, new Icon(Glyph.Lock, 14, TextTone.Secondary), new TextLine(Loc.T("limited_by", coveredBy), TextStyle.Small));
+            if (_madeBlocks.ContainsKey(made) && !_status.StrictMode.IsActive)
             {
                 var undo = new PillButton(Loc.T("undo"), ButtonKind.Accent, size: ButtonSize.Small);
-                undo.Click += (_, _) => UndoBlock(place.Label);
+                undo.Click += (_, _) => UndoBlock(made);
                 limited.Children.Add(undo);
             }
 
@@ -412,15 +586,15 @@ internal sealed partial class MainWindow
         // Strict mode lets rules only be added, so then there's nothing to add to.
         if (!_status.StrictMode.IsActive)
         {
-            HashSet<string> here = RulesOn(site.Host).Select(r => r.Rule.Id).ToHashSet(StringComparer.Ordinal);
+            HashSet<string> first = here.ToHashSet(StringComparer.Ordinal);
             List<EditableConfiguration.EditableRule> targets = _editable.Rules
                 .Where(r => r.Enabled)
-                .OrderByDescending(r => here.Contains(r.Id))
+                .OrderByDescending(r => first.Contains(r.Id))
                 .ToList();
             foreach (EditableConfiguration.EditableRule target in targets)
             {
                 string id = target.Id;
-                menu.AddItem(Loc.T("add_to_rule", RuleName(target)), null, () => AddToRule(site, place, id));
+                menu.AddItem(Loc.T("add_to_rule", RuleName(target)), null, () => AddToRule(id, made, addTo));
             }
 
             if (targets.Count > 0)
@@ -430,35 +604,41 @@ internal sealed partial class MainWindow
             }
         }
 
-        menu.AddItem(Loc.T("block_always"), null, () => BlockNow(site, place, null));
-        menu.AddItem(Loc.T("block_after", 5), null, () => BlockNow(site, place, 5));
-        menu.AddItem(Loc.T("block_after", 15), null, () => BlockNow(site, place, 15));
+        menu.AddItem(Loc.T("block_always"), null, () => BlockNow(newRule(), made, null, night: false));
+        menu.AddItem(Loc.T("block_at_night", NightFrom.ToString("HH:mm"), NightTo.ToString("HH:mm")), null, () => BlockNow(newRule(), made, null, night: true));
+        menu.AddItem(Loc.T("block_after", 5), null, () => BlockNow(newRule(), made, 5, night: false));
+        menu.AddItem(Loc.T("block_after", 15), null, () => BlockNow(newRule(), made, 15, night: false));
         menu.AddDivider();
-        menu.AddItem(Loc.T("more_options"), null, () => OpenEditor(RuleFor(site, place), -1, returnTo: Page.Status));
+        menu.AddItem(Loc.T("more_options"), null, () => OpenEditor(newRule(), -1, returnTo: Page.Status));
         block.Click += (_, _) => menu.ShowAt(block);
         return block;
     }
 
-    /// <summary>Saves a new rule for this place right away: all day, every day.</summary>
-    private void BlockNow(ActivitySite site, ActivityPlace place, int? minutesPerHour)
+    /// <summary>Saves <paramref name="rule"/> as a new rule right away: every day, all day or at night.</summary>
+    private void BlockNow(EditableConfiguration.EditableRule rule, string made, int? minutesPerHour, bool night)
     {
-        EditableConfiguration.EditableRule rule = RuleFor(site, place);
         rule.BlockCompletely = minutesPerHour is null;
         rule.AllowanceMinutes = minutesPerHour ?? rule.AllowanceMinutes;
+        if (night)
+        {
+            rule.AllDay = false;
+            rule.From = NightFrom;
+            rule.To = NightTo;
+        }
 
         EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
         candidate.Rules.Add(rule);
         if (_controller.TrySaveConfiguration(candidate, out _))
         {
             _editable = _controller.GetEditableConfiguration();
-            _madeBlocks[place.Label] = (rule.Id, null);
+            _madeBlocks[made] = (rule.Id, null);
         }
 
         Rerender();
     }
 
-    /// <summary>Adds this place to a rule there is already, saved right away.</summary>
-    private void AddToRule(ActivitySite site, ActivityPlace place, string ruleId)
+    /// <summary>Adds a place of a site, or an app, to a rule there is already, saved right away.</summary>
+    private void AddToRule(string ruleId, string made, Action<EditableConfiguration.EditableRule> addTo)
     {
         EditableConfiguration candidate = EditableConfiguration.FromJson(_editable.ToJson());
         EditableConfiguration.EditableRule? rule = candidate.Rules.FirstOrDefault(r => r.Id == ruleId);
@@ -470,7 +650,7 @@ internal sealed partial class MainWindow
         EditableConfiguration.EditableRule before = rule.Clone();
         try
         {
-            rule.Block(RuleFor(site, place).Sites[0]);
+            addTo(rule);
         }
         catch (ConfigurationException)
         {
@@ -480,16 +660,16 @@ internal sealed partial class MainWindow
         if (_controller.TrySaveConfiguration(candidate, out _))
         {
             _editable = _controller.GetEditableConfiguration();
-            _madeBlocks[place.Label] = (ruleId, before);
+            _madeBlocks[made] = (ruleId, before);
         }
 
         Rerender();
     }
 
     /// <summary>Takes a block made here back: a new rule goes, a rule added to is as it was.</summary>
-    private void UndoBlock(string placeLabel)
+    private void UndoBlock(string madeKey)
     {
-        if (!_madeBlocks.TryGetValue(placeLabel, out (string RuleId, EditableConfiguration.EditableRule? Before) made))
+        if (!_madeBlocks.TryGetValue(madeKey, out (string RuleId, EditableConfiguration.EditableRule? Before) made))
         {
             return;
         }
@@ -508,7 +688,7 @@ internal sealed partial class MainWindow
         if (_controller.TrySaveConfiguration(candidate, out _))
         {
             _editable = _controller.GetEditableConfiguration();
-            _madeBlocks.Remove(placeLabel);
+            _madeBlocks.Remove(madeKey);
         }
 
         Rerender();
@@ -554,16 +734,16 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// One rule the site is in: what it blocks here, when, and what it's doing
+    /// One rule the site or app is in: what it blocks of it, when, and what it's doing
     /// right now. Opens the rule, except in strict mode; a rule switched off can
     /// be switched on (that only blocks more).
     /// </summary>
-    private Control RuleRow(EditableConfiguration.EditableRule rule, int index, EditableConfiguration.EditableSite site)
+    private Control RuleRow(EditableConfiguration.EditableRule rule, int index, string what)
     {
         var chip = new Chip("");
         StackPanel text = Layout.Column(2,
             new TextLine(RuleName(rule), TextStyle.Strong),
-            new TextLine($"{BlockedSummary(site)} · {ConditionSummary(rule)}", TextStyle.Small));
+            new TextLine($"{what} · {ConditionSummary(rule)}", TextStyle.Small));
         if (!rule.Enabled)
         {
             Layout.Inactive(text);
@@ -665,6 +845,31 @@ internal sealed partial class MainWindow
 
     private HashSet<string> Untracked() => _untracked ??= _settings.LoadUntrackedSites();
 
+    /// <summary>Apps marked okay: their key and the name to list them by.</summary>
+    private Dictionary<string, string> UntrackedApps() => _untrackedApps ??= _settings.LoadUntrackedApps();
+
+    /// <summary>Marks an app okay (its time joins the okay total, today's included) or tracks it on its own again.</summary>
+    private void SetAppTracked(string key, string name, bool tracked)
+    {
+        Dictionary<string, string> untracked = UntrackedApps();
+        if (tracked)
+        {
+            untracked.Remove(key);
+        }
+        else
+        {
+            untracked[key] = name;
+        }
+
+        _settings.SaveUntrackedApps(untracked);
+        _controller.SetUntrackedApps(untracked.Keys);
+        _status = _controller.Status;
+        _openApp = null;
+        _justUntracked = null;
+        _justUntrackedApp = tracked ? null : (key, name);
+        Rerender();
+    }
+
     /// <summary>Marks a site okay (its time joins the okay total, today's included) or tracks it on its own again.</summary>
     private void SetTracked(string host, bool tracked)
     {
@@ -683,14 +888,15 @@ internal sealed partial class MainWindow
         _status = _controller.Status;
         _openSite = null;
         _justUntracked = tracked ? null : host;
+        _justUntrackedApp = null;
         Rerender();
     }
 
-    private Control UntrackedNote(string host)
+    private static Control UntrackedNote(string name, Action undoIt)
     {
         var undo = new PillButton(Loc.T("undo"), ButtonKind.Accent, size: ButtonSize.Small);
-        undo.Click += (_, _) => SetTracked(host, true);
-        return new Banner(Tone.Neutral, Glyph.Check, Banner.Message(Tone.Neutral, new Phrase(Loc.T("okay_now", host))), undo);
+        undo.Click += (_, _) => undoIt();
+        return new Banner(Tone.Neutral, Glyph.Check, Banner.Message(Tone.Neutral, new Phrase(Loc.T("okay_now", name))), undo);
     }
 
     // ----- Formatting -----
