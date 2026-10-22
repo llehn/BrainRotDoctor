@@ -175,6 +175,8 @@ internal static class PrivateBrowsing
         return false;
     }
 
+    // Only a button named for the mode itself ("Incognito", "InPrivate-Browsen").
+    // "New Incognito window", pinned in an ordinary window, is not a marker.
     private static bool StartsModeWord(string name)
     {
         foreach (string mode in ModeWords)
@@ -185,9 +187,7 @@ internal static class PrivateBrowsing
             }
         }
 
-        return ContainsIgnoreCase(name, "incognito")
-            || ContainsIgnoreCase(name, "inkognito")
-            || ContainsIgnoreCase(name, "inprivate");
+        return false;
     }
 
     /// <summary>

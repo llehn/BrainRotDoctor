@@ -164,7 +164,7 @@ public sealed class PrivateWindowLiveTests
         return last;
     }
 
-    private static bool StartedWithUs(IntPtr handle, string processName, DateTime startedAt)
+    internal static bool StartedWithUs(IntPtr handle, string processName, DateTime startedAt)
     {
         NativeMethods.GetWindowThreadProcessId(handle, out uint pid);
         if (pid == 0)
@@ -188,7 +188,7 @@ public sealed class PrivateWindowLiveTests
         }
     }
 
-    private static ProcessStartInfo StartInfo(string exe, string processName, string profile, bool isPrivate)
+    internal static ProcessStartInfo StartInfo(string exe, string processName, string profile, bool isPrivate, string url = "https://example.com/")
     {
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
         if (processName == "firefox")
@@ -201,7 +201,7 @@ public sealed class PrivateWindowLiveTests
                 psi.ArgumentList.Add("-private-window");
             }
 
-            psi.ArgumentList.Add("https://example.com/");
+            psi.ArgumentList.Add(url);
             return psi;
         }
 
@@ -216,11 +216,11 @@ public sealed class PrivateWindowLiveTests
             psi.ArgumentList.Add(processName == "msedge" ? "--inprivate" : "--incognito");
         }
 
-        psi.ArgumentList.Add("https://example.com/");
+        psi.ArgumentList.Add(url);
         return psi;
     }
 
-    private static void PrepareFirefoxProfile(string processName, string profile)
+    internal static void PrepareFirefoxProfile(string processName, string profile)
     {
         if (processName != "firefox")
         {
@@ -238,6 +238,11 @@ public sealed class PrivateWindowLiveTests
             user_pref("startup.homepage_welcome_url", "");
             user_pref("startup.homepage_welcome_url.additional", "");
             user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
+            user_pref("browser.preonboarding.enabled", false);
+            user_pref("termsofuse.bypassNotification", true);
+            user_pref("termsofuse.acceptedVersion", 999);
+            user_pref("termsofuse.acceptedDate", "1760000000000");
+            user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
             """);
     }
 
@@ -276,7 +281,7 @@ public sealed class PrivateWindowLiveTests
     /// up the next attempt. A browser the user already had open started earlier
     /// and is left alone.
     /// </summary>
-    private static void KillStartedSince(string processName, DateTime startedAt)
+    internal static void KillStartedSince(string processName, DateTime startedAt)
     {
         foreach (Process process in Process.GetProcessesByName(processName))
         {
@@ -300,7 +305,7 @@ public sealed class PrivateWindowLiveTests
         }
     }
 
-    private static string BrowserLabel(string processName) => processName switch
+    internal static string BrowserLabel(string processName) => processName switch
     {
         "chrome" => "Chrome",
         "msedge" => "Edge",
@@ -308,7 +313,7 @@ public sealed class PrivateWindowLiveTests
         _ => processName,
     };
 
-    private static string? BrowserExe(string processName)
+    internal static string? BrowserExe(string processName)
     {
         string[] paths = processName switch
         {

@@ -1278,6 +1278,57 @@ AppBlock model (ADR-007). "No games and no YouTube at night" is one rule.
 - An exclusive-fullscreen game may hide the scene and the heads-up. The sound still
   plays, and the close still happens.
 
+### ADR-016: Watching a Browser Never Slows It Down
+
+- **Status:** Accepted
+- **Date:** 2026-10-22
+- **Constrains:** ADR-002 (how browsers are read), ADR-005 and ADR-010 (reading every
+  second), ADR-013 (recognizing private windows)
+
+#### Context
+
+The app reads every on-screen browser window once a second. Each read asked the
+browser to search its whole window, the web page included, for every button. On a
+heavy page Firefox spent up to 740 ms answering one read, and a full second's reads
+took 720–1000 ms. The browser lagged visibly. Nothing in the rules forbade it,
+and the cost was never measured.
+
+#### Decision
+
+- **A check is one read of one browser window.** It is what the app does for each
+  window every second.
+- **No check may take longer than 50 ms.** This is a hard limit for every
+  supported browser, measured on a heavy page, never on a blank one.
+- **The target is 15 ms.** If a browser cannot be read correctly in 15 ms, that is
+  raised with the product owner before release. It is not accepted silently.
+- **No excessive checking.** A check asks only what the decision needs right now:
+  - Never search the web page itself. Look only at the browser's own frame and toolbar.
+  - Never ask again what cannot change. A window is private or not for its whole life.
+  - Never ask the same thing twice in one check.
+- **Remembered, not hard-wired.** Where a window's page sits is found once and
+  remembered. When it is no longer there (another tab, a browser update that moved
+  it), it is looked up again by a search that stops at the page. A browser update
+  costs one slower read, never a window that silently stops being read.
+- **"Easier to write" is never a reason** to ask the browser for more.
+- **Enforced by a live test.** For each installed browser, a heavy page is opened
+  and its checks are timed. The test fails if any check takes over 50 ms, and it
+  reports every check over 15 ms.
+
+#### Rejected Alternatives
+
+**Read less often (every few seconds).** Rejected as the fix: it spreads the same
+lag out instead of removing it, and makes accounting and blocking slower.
+
+**Accept the cost on heavy pages.** Rejected: the user notices a lagging browser
+before they notice the app, and blames both.
+
+#### Consequences
+
+- Any change to how a browser is read must pass the speed test, in every browser.
+- Browser updates can change the cost. The test is rerun before each release.
+- A browser that hides what we need behind a slow search needs a decision from the
+  product owner, not a workaround.
+
 ## Contributing, License, and Security
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for build,

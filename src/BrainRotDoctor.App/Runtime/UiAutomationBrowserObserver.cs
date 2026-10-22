@@ -17,9 +17,20 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             ["opera"] = "Opera",
         };
 
-    // One tracker per browser window, so text typed into a window's address bar
-    // never counts as the page that window is showing.
-    private readonly Dictionary<IntPtr, AddressBarTracker> _trackers = new();
+    // Everything a read needs from an element, fetched in the same call that finds it.
+    private static readonly CacheRequest Fetch = NewFetch();
+
+    private static readonly Condition PageCondition =
+        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document);
+
+    private static readonly Condition OnScreenPageCondition = new AndCondition(
+        PageCondition,
+        new PropertyCondition(AutomationElement.IsOffscreenProperty, false));
+
+    // What is known about each browser window: its address-bar tracker, so text typed
+    // into one window's bar never counts as the page it shows, and what never has to
+    // be asked again (ADR-016).
+    private readonly Dictionary<IntPtr, WindowState> _windows = new();
 
     public IReadOnlyList<ObservedBrowserWindow> GetSelectedTabs()
     {
@@ -32,13 +43,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
                 continue;
             }
 
-            if (!_trackers.TryGetValue(handle, out AddressBarTracker? tracker))
-            {
-                tracker = new AddressBarTracker();
-                _trackers[handle] = tracker;
-            }
-
-            (Uri? url, bool isPrivate) = TryReadWindow(handle, browserName!, tracker, handle == foreground);
+            (Uri? url, bool isPrivate) = TryReadWindow(handle, browserName!, StateOf(handle), handle == foreground);
             result.Add(new ObservedBrowserWindow(
                 handle.ToInt64().ToString(),
                 handle,
@@ -48,9 +53,9 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
                 isPrivate));
         }
 
-        foreach (IntPtr gone in _trackers.Keys.Where(h => result.All(w => w.WindowHandle != h)).ToArray())
+        foreach (IntPtr gone in _windows.Keys.Where(h => result.All(w => w.WindowHandle != h)).ToArray())
         {
-            _trackers.Remove(gone);
+            _windows.Remove(gone);
         }
 
         return result;
@@ -65,13 +70,18 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             return null;
         }
 
-        if (!_trackers.TryGetValue(windowHandle, out AddressBarTracker? tracker))
+        return TryReadWindow(windowHandle, browserName!, StateOf(windowHandle), windowHandle == NativeMethods.GetForegroundWindow()).Url;
+    }
+
+    private WindowState StateOf(IntPtr handle)
+    {
+        if (!_windows.TryGetValue(handle, out WindowState? state))
         {
-            tracker = new AddressBarTracker();
-            _trackers[windowHandle] = tracker;
+            state = new WindowState();
+            _windows[handle] = state;
         }
 
-        return TryReadWindow(windowHandle, browserName!, tracker, windowHandle == NativeMethods.GetForegroundWindow()).Url;
+        return state;
     }
 
     private static IEnumerable<IntPtr> EnumerateBrowserWindows()
@@ -149,141 +159,163 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         }
     }
 
-    private static (Uri? Url, bool IsPrivate) TryReadWindow(IntPtr handle, string browserName, AddressBarTracker tracker, bool isForeground)
+    private static CacheRequest NewFetch()
+    {
+        var fetch = new CacheRequest();
+        fetch.Add(AutomationElement.NameProperty);
+        fetch.Add(AutomationElement.ClassNameProperty);
+        fetch.Add(AutomationElement.IsOffscreenProperty);
+        fetch.Add(ValuePattern.ValueProperty);
+        return fetch;
+    }
+
+    /// <summary>
+    /// One read of one window (ADR-016): the address of the page in its selected tab,
+    /// and whether it is private. Only the browser's own frame is looked at, never the
+    /// page, and where the page sits is remembered so the next read goes straight there.
+    /// </summary>
+    private static (Uri? Url, bool IsPrivate) TryReadWindow(IntPtr handle, string browserName, WindowState state, bool isForeground)
     {
         string title = NativeMethods.GetWindowTitle(handle);
         try
         {
-            AutomationElement root = AutomationElement.FromHandle(handle);
-            bool isPrivate = IsPrivateWindow(title, root);
+            AutomationElement root = state.Root ??= AutomationElement.FromHandle(handle);
             bool isFirefox = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase);
 
-            // Firefox reports the loaded page's own address, which is never typed text.
-            if (isFirefox && TryReadFirefoxPageAddress(root, out Uri? page))
+            // The browser reports the loaded page's own address, which is never typed text.
+            AutomationElement? page = FindPage(root, state, browserName, title);
+            if (page?.GetCachedPropertyValue(ValuePattern.ValueProperty, ignoreDefaultValue: true) is string address
+                && !string.IsNullOrWhiteSpace(address))
             {
-                return (tracker.Confirm(page), isPrivate);
+                // A non-web page (new tab, settings) is known but matches no rule.
+                UrlNormalizer.TryNormalize(address, out Uri? url);
+                return (state.Tracker.Confirm(url), IsPrivateWindow(title, root, state, browserName, frameReady: true));
             }
 
             // Otherwise fall back to the address bar, guarded against unsent typing.
-            AddressBarReading? bar = isFirefox ? TryReadFirefoxAddressBar(root) : TryReadChromiumAddressBar(root);
-            return (tracker.Resolve(bar?.Text, bar?.HasFocus == true, isForeground, title), isPrivate);
+            AddressBarReading? bar = isFirefox ? TryReadFirefoxAddressBar(root, state) : TryReadChromiumAddressBar(root, state);
+            bool isPrivate = IsPrivateWindow(title, root, state, browserName, frameReady: page is not null || bar is not null);
+            return (state.Tracker.Resolve(bar?.Text, bar?.HasFocus == true, isForeground, title), isPrivate);
         }
         catch (ElementNotAvailableException)
         {
-            return (null, PrivateBrowsing.LooksPrivate(title));
+            state.Forget();
+            return (null, state.FrameSaysPrivate == true || PrivateBrowsing.LooksPrivate(title));
         }
         catch (InvalidOperationException)
         {
-            return (null, PrivateBrowsing.LooksPrivate(title));
+            state.Forget();
+            return (null, state.FrameSaysPrivate == true || PrivateBrowsing.LooksPrivate(title));
         }
     }
 
     /// <summary>
-    /// Private sessions are marked on the window chrome, never on the page: the
-    /// title, the accessibility name of the window and its children, and toolbar
-    /// buttons above the page. A page titled "Incognito" is not a private window.
+    /// The page document of the selected tab, its address fetched with it: first where
+    /// it was last time, while that is still the selected tab; else looked up again,
+    /// by a search that stops at the page before reaching its contents. A browser
+    /// update that moves the page is thus found again, not missed. Only browsers whose
+    /// page reports its own address are read this way; the others go by the address bar.
     /// </summary>
-    private static bool IsPrivateWindow(string title, AutomationElement root)
+    private static AutomationElement? FindPage(AutomationElement root, WindowState state, string browserName, string title)
     {
-        if (PrivateBrowsing.LooksPrivate(title) || PrivateBrowsing.LooksPrivate(root.Current.Name))
+        bool isFirefox = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase);
+        if (!isFirefox && !browserName.Equals("Chrome", StringComparison.OrdinalIgnoreCase) && !browserName.Equals("Edge", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        using (Fetch.Activate())
+        {
+            if (state.PageHolder is { } holder
+                && (!isFirefox || state.SelectedPanel is { } panel && IsSelectedPanel(panel.GetUpdatedCache(Fetch)))
+                && holder.FindFirst(TreeScope.Children, PageCondition) is { } known
+                && ShowsTitle(known, title))
+            {
+                return known;
+            }
+
+            state.PageHolder = null;
+            state.SelectedPanel = null;
+            AutomationElement? page;
+            if (isFirefox)
+            {
+                // Every tab has a panel under one known element; the selected tab's is
+                // marked, even while the window is covered (then all report off screen).
+                state.Panels ??= root.FindFirst(
+                    TreeScope.Children,
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, "tabbrowser-tabpanels"));
+                AutomationElement[] panels = state.Panels?
+                    .FindAll(TreeScope.Children, Condition.TrueCondition)
+                    .Cast<AutomationElement>()
+                    .ToArray() ?? [];
+                state.SelectedPanel = panels.FirstOrDefault(IsSelectedPanel) ?? panels.FirstOrDefault(p => !p.Cached.IsOffscreen);
+                page = state.SelectedPanel?.FindFirst(TreeScope.Descendants, PageCondition)
+                    ?? (state.Panels is null ? root.FindFirst(TreeScope.Descendants, OnScreenPageCondition) : null);
+            }
+            else
+            {
+                // Chromium keeps only the selected tab's page in the window.
+                page = root.FindFirst(TreeScope.Descendants, PageCondition);
+            }
+
+            if (page is not null)
+            {
+                state.PageHolder = TreeWalker.ControlViewWalker.GetParent(page);
+            }
+
+            return page;
+        }
+    }
+
+    private static bool IsSelectedPanel(AutomationElement panel) =>
+        panel.Cached.ClassName.Contains("deck-selected", StringComparison.Ordinal);
+
+    /// <summary>The window title follows the selected tab; a page it doesn't name is another tab's.</summary>
+    private static bool ShowsTitle(AutomationElement page, string title) =>
+        page.Cached.Name is not { Length: > 0 } name || title.StartsWith(name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Private sessions are marked on the window chrome, never on the page: the
+    /// title, the accessibility name of the window, and the profile button in the
+    /// toolbar. A page titled "Incognito" is not a private window. A window is
+    /// private or not for its whole life, so the browser is asked once, as soon as
+    /// it shows its frame (ADR-016). The title costs the browser nothing and is read
+    /// every time: a new window's title is not final at once. Firefox and Edge always
+    /// say so in the title, so their toolbars are never searched.
+    /// </summary>
+    private static bool IsPrivateWindow(string title, AutomationElement root, WindowState state, string browserName, bool frameReady)
+    {
+        if (PrivateBrowsing.LooksPrivate(title))
         {
             return true;
         }
 
-        try
+        bool titleSays = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase) || browserName.Equals("Edge", StringComparison.OrdinalIgnoreCase);
+        if (state.FrameSaysPrivate is null && frameReady && !titleSays)
         {
-            foreach (AutomationElement child in root.FindAll(TreeScope.Children, Condition.TrueCondition).Cast<AutomationElement>())
+            using (Fetch.Activate())
             {
-                if (PrivateBrowsing.LooksPrivate(child.Current.Name))
-                {
-                    return true;
-                }
-            }
-
-            return ToolbarLooksPrivate(root);
-        }
-        catch (ElementNotAvailableException)
-        {
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    private static bool ToolbarLooksPrivate(AutomationElement root)
-    {
-        AutomationElement? document = root.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
-        double pageTop = document is null ? double.MaxValue : document.Current.BoundingRectangle.Top;
-
-        int seen = 0;
-        foreach (AutomationElement button in root.FindAll(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>())
-        {
-            if (button.Current.BoundingRectangle.Top >= pageTop)
-            {
-                continue;
-            }
-
-            if (PrivateBrowsing.LooksPrivateButton(button.Current.Name))
-            {
-                return true;
-            }
-
-            if (++seen >= 40)
-            {
-                break;
+                state.FrameSaysPrivate = PrivateBrowsing.LooksPrivate(root.GetUpdatedCache(Fetch).Cached.Name) || ToolbarLooksPrivate(root);
             }
         }
 
-        return false;
+        return state.FrameSaysPrivate == true;
     }
 
     /// <summary>
-    /// Reads the address of the page loaded in Firefox's selected tab from the
-    /// page document itself. False when Firefox has not exposed it (yet).
+    /// Chromium's main toolbar, the first one in its frame, holds its private-session
+    /// control (the profile button). The search stops there and never enters a page.
     /// </summary>
-    private static bool TryReadFirefoxPageAddress(AutomationElement root, out Uri? page)
-    {
-        page = null;
-        AutomationElement? panels = root.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "tabbrowser-tabpanels"));
-        if (panels is null)
-        {
-            return false;
-        }
-
-        // Every tab has a panel; only the selected tab's panel is on screen.
-        AutomationElement? selected = panels
-            .FindAll(TreeScope.Children, Condition.TrueCondition)
+    private static bool ToolbarLooksPrivate(AutomationElement root) =>
+        root.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ToolBar)) is { } toolbar
+        && toolbar
+            .FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button))
             .Cast<AutomationElement>()
-            .FirstOrDefault(panel => !panel.Current.IsOffscreen);
+            .Any(button => PrivateBrowsing.LooksPrivateButton(button.Cached.Name));
 
-        // The first document in the panel is the page; frames inside it come later.
-        AutomationElement? document = selected?.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document));
-        if (document is null
-            || !document.TryGetCurrentPattern(ValuePattern.Pattern, out object patternObj)
-            || patternObj is not ValuePattern pattern
-            || string.IsNullOrWhiteSpace(pattern.Current.Value))
-        {
-            return false;
-        }
-
-        // A non-web page (new tab, settings) is known but matches no rule.
-        UrlNormalizer.TryNormalize(pattern.Current.Value, out page);
-        return true;
-    }
-
-    private static AddressBarReading? TryReadFirefoxAddressBar(AutomationElement root)
+    private static AddressBarReading? TryReadFirefoxAddressBar(AutomationElement root, WindowState state)
     {
-        AutomationElement? urlBar = root.FindFirst(
+        AutomationElement? urlBar = state.AddressBar ??= root.FindFirst(
             TreeScope.Descendants,
             new PropertyCondition(AutomationElement.AutomationIdProperty, "urlbar-input"));
 
@@ -298,8 +330,21 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         return new AddressBarReading(text, urlBar.Current.HasKeyboardFocus);
     }
 
-    private static AddressBarReading? TryReadChromiumAddressBar(AutomationElement root)
+    /// <summary>
+    /// Chromium's own address bar, found by a search that stops at it in the toolbar.
+    /// Only a Chromium browser whose bar is something else falls back to looking
+    /// through every text field.
+    /// </summary>
+    private static AddressBarReading? TryReadChromiumAddressBar(AutomationElement root, WindowState state)
     {
+        AutomationElement? bar = state.AddressBar ??= root.FindFirst(
+            TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.ClassNameProperty, "OmniboxViewViews"));
+        if (bar is not null)
+        {
+            return new AddressBarReading(ReadAddressText(bar), bar.Current.HasKeyboardFocus);
+        }
+
         AutomationElement[] edits = root.FindAll(
                 TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit))
@@ -307,10 +352,9 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             .ToArray();
         AutomationElement[] addressLike = edits.Where(LooksLikeAddressBar).ToArray();
 
-        // Chromium's own address bar first; otherwise the top-most address-like
-        // field, preferring one that holds a URL; otherwise any field with a URL.
-        AutomationElement? bar = edits.FirstOrDefault(e => e.Current.ClassName == "OmniboxViewViews")
-            ?? TopMost(addressLike.Where(HoldsUrl))
+        // The top-most address-like field, preferring one that holds a URL;
+        // otherwise any field with a URL.
+        bar = TopMost(addressLike.Where(HoldsUrl))
             ?? TopMost(addressLike)
             ?? TopMost(edits.Where(HoldsUrl));
 
@@ -395,4 +439,36 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
     }
 
     private sealed record AddressBarReading(string? Text, bool HasFocus);
+
+    /// <summary>What is remembered about one browser window between reads.</summary>
+    private sealed class WindowState
+    {
+        public AddressBarTracker Tracker { get; } = new();
+
+        /// <summary>Whether the window frame marks a private session, once it could be read; it never changes.</summary>
+        public bool? FrameSaysPrivate { get; set; }
+
+        public AutomationElement? Root { get; set; }
+
+        /// <summary>Firefox's panel that holds every tab's page.</summary>
+        public AutomationElement? Panels { get; set; }
+
+        /// <summary>Firefox's panel of the tab that was selected last time.</summary>
+        public AutomationElement? SelectedPanel { get; set; }
+
+        /// <summary>Where the selected tab's page was found last time.</summary>
+        public AutomationElement? PageHolder { get; set; }
+
+        public AutomationElement? AddressBar { get; set; }
+
+        /// <summary>An element went away (the browser rebuilt its frame): find everything again.</summary>
+        public void Forget()
+        {
+            Root = null;
+            Panels = null;
+            SelectedPanel = null;
+            PageHolder = null;
+            AddressBar = null;
+        }
+    }
 }

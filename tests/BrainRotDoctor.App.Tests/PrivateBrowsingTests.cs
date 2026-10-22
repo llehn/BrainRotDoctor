@@ -53,6 +53,9 @@ public sealed class PrivateBrowsingTests
     [InlineData("Chrome")]
     [InlineData("Neuer Tab")]
     [InlineData("Schließen")]
+    [InlineData("New Incognito window - pinned")]
+    [InlineData("Neues Inkognitofenster – angepinnt")]
+    [InlineData("Neues InPrivate-Fenster")]
     public void Ordinary_toolbar_buttons_are_not_private(string name) =>
         Assert.False(PrivateBrowsing.LooksPrivateButton(name), name);
 }
