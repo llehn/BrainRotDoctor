@@ -88,7 +88,8 @@ as needing attention (amber); on is calm.
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. If either role is frozen, the other wakes it.
-Normal startup also registers the app in the current user's Windows Run key.
+While it is installed it starts at sign-in, and puts that registration back if
+it is turned off. Uninstall removes it.
 
 The UI is **localized into 31 languages** (the 24 official EU languages plus
 Russian, Ukrainian, Bosnian, Serbian (Cyrillic), Norwegian Bokmål, Turkish, and
@@ -1328,6 +1329,70 @@ before they notice the app, and blames both.
 - Browser updates can change the cost. The test is rerun before each release.
 - A browser that hides what we need behind a slow search needs a decision from the
   product owner, not a workaround.
+
+### ADR-017: An Installed App Keeps Starting at Sign-In
+
+- **Status:** Accepted
+- **Date:** 2026-10-22
+- **Extends:** ADR-008 (what install registers), ADR-001 (startup removal)
+
+#### Context
+
+The Startup apps page can turn the login entry off without deleting it. Windows
+keeps a separate off mark. The app never looked at that mark, and both processes
+die at sign-out, so nothing put the mark back. One gesture and a reboot stopped
+enforcement until the app was opened by hand.
+
+An installed app that is not running is not a mode the product supports. Uninstall
+is the off switch, and it already works the moment no commitment is on (ADR-008).
+During a commitment, uninstall refuses.
+
+#### Decision
+
+- While the app is installed, sign-in registration is put back while it is running,
+  including the Startup apps off mark.
+- Sign-in also uses a second registration that the Startup apps page does not
+  control, so that gesture does not survive a reboot.
+- A repeating sign-in task starts the app within a minute if both processes are
+  dead and the visible login entry is off. The task runs a short check that exits
+  at once when the app is already running, so the task does not own the process
+  and ending the task does not stop the app.
+- Each registration is put back while the app is running. The one left unwatched
+  would become the new one-gesture escape.
+- Uninstall removes all of them. It removes the repeating task before it finishes
+  stopping the running app, and removes the registrations again afterward, so a
+  last start cannot put them back.
+- Outside a commitment, uninstall remains the way to stop the app from starting.
+  The Startup apps switch is not that way.
+
+#### Rejected Alternatives
+
+**Only undo the Startup apps switch.** Rejected. It loses if the switch is flipped
+and the user signs out before the app notices, and it does nothing if the app is
+not running.
+
+**The single logon-script slot.** Rejected. It is one shared slot, so it would
+overwrite whatever else was there, and it does nothing the other registrations do
+not already do.
+
+**A Windows service.** Rejected for now. It needs an admin prompt, which breaks
+the no-admin install (ADR-008). It stays the escalation if the remaining deliberate
+path starts being used.
+
+**Several entries on the Startup apps page.** Rejected. Same screen, same gesture.
+
+**Fight the switch only during a commitment.** Rejected. Outside a commitment the
+user can already turn rules off, and can uninstall. A stopped install is not a
+supported mode either way.
+
+#### Consequences
+
+- Uninstall must keep removing every registration. A missed one would start the
+  app again after it was removed.
+- Sign-in impact stays a release obligation (ADR-001). The extra registrations
+  start the same tray launch the login entry already started.
+- Public documentation does not describe how to remove the registrations by hand
+  (ADR-001).
 
 ## Contributing, License, and Security
 

@@ -22,6 +22,14 @@ internal static class Program
             return;
         }
 
+        // The repeating sign-in task. Starts the app if it is down, then exits,
+        // so the task never owns the running process.
+        if (HasFlag(args, StartupRegistrar.KickFlag))
+        {
+            StartupKick.Run();
+            return;
+        }
+
         // A verified, staged build re-invokes itself in this role to overwrite the
         // installed exe and relaunch. It runs before any normal startup so it never
         // acquires the primary mutex or starts its own watchdog.
@@ -122,6 +130,14 @@ internal static class Program
             return;
         }
 
+        // A copy started during uninstall must not put registration back.
+        // An update swap is not checked here: a start during that window is how
+        // a failed swap recovers, and the minute check refuses to be that start.
+        if (UninstallGuard.IsBlocked(currentExe))
+        {
+            return;
+        }
+
         // Launches nobody asked to see (sign-in, a watchdog revival, an update
         // relaunch) start in the tray; one the user opened shows the window.
         bool startInTray = HasFlag(args, StartupRegistrar.StartupFlag)
@@ -144,10 +160,9 @@ internal static class Program
         // and the staged binary / backup left behind by a swap.
         UpdateRecovery.CleanupOnStartup(currentExe);
 
-        if (!HasFlag(args, "--no-startup"))
-        {
-            StartupRegistrar.EnsureCurrentUserStartup();
-        }
+        // While installed, sign-in registration is put back if it is turned off.
+        // --no-startup is for temporary runs that must not leave any of it behind.
+        using StartupKeeper? keeper = HasFlag(args, "--no-startup") ? null : StartupKeeper.Start();
 
         using ProcessProtector? protector = HasFlag(args, "--no-watchdog")
             ? null
@@ -224,8 +239,19 @@ internal static class Program
             return;
         }
 
+        // Mark uninstall first, so a copy the watchdog or the sign-in task still
+        // manages to start exits without putting the registration back. Then
+        // remove, stop, and wait out a repair that was already in flight.
+        UninstallGuard.Block(installer.InstalledExePath);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            TryRemoveRegistration(installer);
+            StopRunningInstances(installer.InstalledExePath);
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(2));
+        }
+
         StopRunningInstances(installer.InstalledExePath);
-        installer.RemoveRegistration();
+        TryRemoveRegistration(installer);
         try
         {
             installer.RemoveAppData();
@@ -244,6 +270,19 @@ internal static class Program
                 Ui.Loc.T("removed"),
                 "BrainRotDoctor",
                 NativeMethods.MB_ICONINFORMATION);
+        }
+    }
+
+    /// <summary>Drops sign-in registration. A failure here must not skip the rest of uninstall.</summary>
+    private static void TryRemoveRegistration(Installer installer)
+    {
+        try
+        {
+            installer.RemoveRegistration();
+        }
+        catch (Exception)
+        {
+            // Keep going. A registration that will not clear must not skip file removal.
         }
     }
 

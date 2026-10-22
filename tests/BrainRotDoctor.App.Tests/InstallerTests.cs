@@ -27,6 +27,9 @@ public sealed class InstallerTests : IDisposable
             InstallDir = Path.Combine(_root, "install"),
             AppDataDir = Path.Combine(_root, "appdata"),
             RunKeyPath = _testRegRoot + @"\Run",
+            PolicyRunKeyPath = _testRegRoot + @"\Policies\Explorer\Run",
+            StartupApprovedKeyPath = _testRegRoot + @"\StartupApproved\Run",
+            TaskName = null,
             UninstallKeyPath = _testRegRoot + @"\Uninstall\BrainRotDoctor",
         };
     }
@@ -41,7 +44,15 @@ public sealed class InstallerTests : IDisposable
 
         using RegistryKey? run = Registry.CurrentUser.OpenSubKey(_options.RunKeyPath);
         Assert.NotNull(run);
-        Assert.Equal($"\"{installer.InstalledExePath}\"", run!.GetValue(_options.RunValueName));
+        Assert.Equal(
+            $"\"{installer.InstalledExePath}\" {StartupRegistrar.StartupFlag}",
+            run!.GetValue(_options.RunValueName));
+
+        using RegistryKey? policy = Registry.CurrentUser.OpenSubKey(_options.PolicyRunKeyPath);
+        Assert.NotNull(policy);
+        Assert.Equal(
+            $"\"{installer.InstalledExePath}\" {StartupRegistrar.StartupFlag}",
+            policy!.GetValue(_options.RunValueName));
 
         using RegistryKey? un = Registry.CurrentUser.OpenSubKey(_options.UninstallKeyPath);
         Assert.NotNull(un);
@@ -58,6 +69,8 @@ public sealed class InstallerTests : IDisposable
 
         using RegistryKey? run = Registry.CurrentUser.OpenSubKey(_options.RunKeyPath);
         Assert.True(run is null || run.GetValue(_options.RunValueName) is null);
+        using RegistryKey? policy = Registry.CurrentUser.OpenSubKey(_options.PolicyRunKeyPath);
+        Assert.True(policy is null || policy.GetValue(_options.RunValueName) is null);
         Assert.Null(Registry.CurrentUser.OpenSubKey(_options.UninstallKeyPath));
     }
 

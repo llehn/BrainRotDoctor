@@ -13,6 +13,18 @@ internal sealed class InstallOptions
 
     public string RunKeyPath { get; init; } = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public string RunValueName { get; init; } = "BrainRotDoctor";
+
+    /// <summary>Sign-in list the Startup apps page does not show. Null is not used; tests point this at a private key.</summary>
+    public string PolicyRunKeyPath { get; init; } =
+        @"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run";
+
+    /// <summary>The Startup apps off mark for the login entry. Tests point this at a private key.</summary>
+    public string StartupApprovedKeyPath { get; init; } =
+        @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+    /// <summary>Repeating sign-in task. Null skips it, so tests do not register a real task.</summary>
+    public string? TaskName { get; init; } = "BrainRotDoctor";
+
     public string UninstallKeyPath { get; init; } =
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\BrainRotDoctor";
 
@@ -34,7 +46,7 @@ internal sealed class InstallOptions
 
 /// <summary>
 /// A per-user (no admin) installer: it copies the single-file executable into
-/// <c>%LOCALAPPDATA%\Programs</c>, registers current-user autostart, and creates
+/// <c>%LOCALAPPDATA%\Programs</c>, registers current-user sign-in, and creates
 /// the "Apps &amp; features" uninstall entry whose UninstallString re-invokes the
 /// app with <c>--uninstall</c>. Because uninstall is our own code, it can refuse
 /// while strict mode is active (the friction the product is built on).
@@ -64,40 +76,32 @@ internal sealed class Installer
     }
 
     /// <summary>
-    /// Writes the autostart value and the "Apps &amp; features" uninstall entry.
-    /// This touches only the registry, not the locked exe, so it is safe to call
-    /// to refresh the recorded version while an older build is still running and
-    /// the binary itself is being swapped through the update applier.
+    /// Writes sign-in registration and the "Apps &amp; features" uninstall entry.
+    /// This does not need the exe lock, so it is safe to call to refresh the
+    /// recorded version while an older build is still running and the binary
+    /// itself is being swapped through the update applier.
     /// </summary>
     public void WriteRegistration()
     {
         Directory.CreateDirectory(_o.InstallDir);
-        string dest = InstalledExePath;
-
-        using (RegistryKey run = Registry.CurrentUser.CreateSubKey(_o.RunKeyPath))
-        {
-            run.SetValue(_o.RunValueName, $"\"{dest}\"");
-        }
+        UninstallGuard.Clear(InstalledExePath);
+        StartupRegistrar.Ensure(_o, InstalledExePath);
 
         using RegistryKey uninstall = Registry.CurrentUser.CreateSubKey(_o.UninstallKeyPath);
         uninstall.SetValue("DisplayName", _o.DisplayName);
         uninstall.SetValue("DisplayVersion", _o.Version);
         uninstall.SetValue("Publisher", _o.Publisher);
-        uninstall.SetValue("DisplayIcon", dest);
+        uninstall.SetValue("DisplayIcon", InstalledExePath);
         uninstall.SetValue("InstallLocation", _o.InstallDir);
-        uninstall.SetValue("UninstallString", $"\"{dest}\" --uninstall");
+        uninstall.SetValue("UninstallString", $"\"{InstalledExePath}\" --uninstall");
         uninstall.SetValue("NoModify", 1, RegistryValueKind.DWord);
         uninstall.SetValue("NoRepair", 1, RegistryValueKind.DWord);
     }
 
-    /// <summary>Removes the autostart value and the uninstall entry.</summary>
+    /// <summary>Removes sign-in registration and the uninstall entry.</summary>
     public void RemoveRegistration()
     {
-        using (RegistryKey? run = Registry.CurrentUser.OpenSubKey(_o.RunKeyPath, writable: true))
-        {
-            run?.DeleteValue(_o.RunValueName, throwOnMissingValue: false);
-        }
-
+        StartupRegistrar.Remove(_o);
         Registry.CurrentUser.DeleteSubKeyTree(_o.UninstallKeyPath, throwOnMissingSubKey: false);
     }
 

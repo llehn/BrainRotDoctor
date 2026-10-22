@@ -29,6 +29,36 @@ internal sealed class ProcessProtector : IDisposable
     public static Mutex AcquirePrimary(out bool ownsMutex) =>
         new(initiallyOwned: true, PrimaryMutexName, out ownsMutex);
 
+    /// <summary>True when a live primary holds the role. An abandoned mutex does not count.</summary>
+    internal static bool IsPrimaryAlive()
+    {
+        try
+        {
+            using Mutex mutex = Mutex.OpenExisting(PrimaryMutexName);
+            try
+            {
+                if (!mutex.WaitOne(0))
+                {
+                    return true;
+                }
+
+                mutex.ReleaseMutex();
+                return false;
+            }
+            catch (AbandonedMutexException)
+            {
+                mutex.ReleaseMutex();
+                return false;
+            }
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            return false;
+        }
+    }
+
+    internal static void StartCurrentExe(params string[] args) => StartSibling(args);
+
     public static void RunWatchdog()
     {
         using Mutex mutex = new(initiallyOwned: true, WatchdogMutexName, out bool ownsMutex);
@@ -37,13 +67,20 @@ internal sealed class ProcessProtector : IDisposable
             return;
         }
 
-        using var protector = new ProcessProtector(PrimaryMutexName, PrimaryStartingMutexName, ["--role", "primary"]);
+        // A revival must keep the flags this run was started with. Otherwise a
+        // temporary --no-startup run registers itself the moment the watchdog
+        // brings the primary back.
+        bool noStartup = Environment.GetCommandLineArgs().Any(static arg => arg == "--no-startup");
+        string[] primaryArgs = noStartup
+            ? ["--role", "primary", "--no-startup"]
+            : ["--role", "primary"];
+        using var protector = new ProcessProtector(PrimaryMutexName, PrimaryStartingMutexName, primaryArgs);
         var standdown = UpdateStanddown.ForCurrentProcess();
         while (true)
         {
             // A verified update is replacing the installed exe: stand down so the
             // file unlocks. The departing primary schedules the recovery relaunch.
-            if (standdown.IsActive())
+            if (standdown.IsActive() || UninstallGuard.IsBlocked(CurrentExe()))
             {
                 protector._watch.ReleaseStart();
                 return;
@@ -56,7 +93,11 @@ internal sealed class ProcessProtector : IDisposable
 
     public static ProcessProtector StartForPrimary(string[] args)
     {
-        var protector = new ProcessProtector(WatchdogMutexName, WatchdogStartingMutexName, ["--role", "watchdog"]);
+        bool noStartup = args.Any(static arg => arg == "--no-startup");
+        string[] watchdogArgs = noStartup
+            ? ["--role", "watchdog", "--no-startup"]
+            : ["--role", "watchdog"];
+        var protector = new ProcessProtector(WatchdogMutexName, WatchdogStartingMutexName, watchdogArgs);
         var thread = new Thread(() => protector.RunPrimaryMonitor())
         {
             IsBackground = true,
@@ -82,6 +123,12 @@ internal sealed class ProcessProtector : IDisposable
                 // A verified update needs this process to release the installed exe.
                 // Schedule a safety-net relaunch (in case the swap stalls) and exit so
                 // the applier can overwrite the binary; the new build then takes over.
+                if (UninstallGuard.IsBlocked(CurrentExe()))
+                {
+                    _watch.ReleaseStart();
+                    Environment.Exit(0);
+                }
+
                 if (standdown.IsActive())
                 {
                     _watch.ReleaseStart();
@@ -160,9 +207,13 @@ internal sealed class ProcessProtector : IDisposable
 
     private static void StartSibling(params string[] args)
     {
-        string exe = Environment.ProcessPath
-            ?? Process.GetCurrentProcess().MainModule?.FileName
-            ?? throw new InvalidOperationException("Cannot resolve the executable path.");
+        string exe = CurrentExe();
+        // A launch already decided must still not land during uninstall or a swap.
+        if (UninstallGuard.IsBlocked(exe) || UpdateStanddown.ForCurrentProcess().IsActive())
+        {
+            return;
+        }
+
         var info = new ProcessStartInfo
         {
             FileName = "cmd.exe",
@@ -183,4 +234,9 @@ internal sealed class ProcessProtector : IDisposable
 
         Process.Start(info);
     }
+
+    private static string CurrentExe()
+        => Environment.ProcessPath
+            ?? Process.GetCurrentProcess().MainModule?.FileName
+            ?? throw new InvalidOperationException("Cannot resolve the executable path.");
 }
