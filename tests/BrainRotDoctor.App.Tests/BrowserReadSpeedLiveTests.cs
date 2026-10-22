@@ -217,8 +217,7 @@ public sealed class BrowserReadSpeedLiveTests
         public const string Path = "/feed";
         public const string OtherPath = "/other";
 
-        // Port 80, so the address bar shows a plain "127.0.0.1/feed", as it would a site.
-        private readonly TcpListener _listener = new(IPAddress.Loopback, 80);
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly byte[] _response;
         private readonly byte[] _other = Html("<!doctype html><html><head><title>Other</title></head><body><p>Another tab.</p></body></html>");
 
@@ -240,11 +239,11 @@ public sealed class BrowserReadSpeedLiveTests
 
         public int Port { get; }
 
-        public string Url => $"http://127.0.0.1{Path}";
+        public string Url => $"http://127.0.0.1:{Port}{Path}";
 
-        public string OtherUrl => $"http://127.0.0.1{OtherPath}";
+        public string OtherUrl => $"http://127.0.0.1:{Port}{OtherPath}";
 
-        // Chromium's address bar hides "http://", so the observer reads it as https.
+        // Any port and scheme: the page is known by its address.
         public static bool IsPage(Uri? url, string path) => url is not null && url.Host == "127.0.0.1" && url.AbsolutePath == path;
 
         private static byte[] Html(string page)
