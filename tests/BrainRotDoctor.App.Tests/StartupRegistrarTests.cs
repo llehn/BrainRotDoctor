@@ -1,5 +1,6 @@
 using BrainRotDoctor.App.Runtime;
 using Microsoft.Win32;
+using System.IO;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Xunit;
@@ -23,7 +24,6 @@ public sealed class StartupRegistrarTests : IDisposable
             SourceExe = @"C:\apps\Brain Rot Doctor.exe",
             InstallDir = @"C:\apps",
             RunKeyPath = _root + @"\Run",
-            PolicyRunKeyPath = _root + @"\Policies\Explorer\Run",
             StartupApprovedKeyPath = _root + @"\StartupApproved\Run",
             TaskName = null,
         };
@@ -48,7 +48,7 @@ public sealed class StartupRegistrarTests : IDisposable
     }
 
     [Fact]
-    public void Ensure_writes_both_sign_in_entries_and_puts_an_off_mark_back()
+    public void Ensure_writes_the_login_entry_puts_the_off_switch_back_and_writes_the_task()
     {
         using (RegistryKey approved = Registry.CurrentUser.CreateSubKey(_options.StartupApprovedKeyPath))
         {
@@ -59,49 +59,52 @@ public sealed class StartupRegistrarTests : IDisposable
 
         string command = StartupRegistrar.LaunchCommand(_options.SourceExe);
         using RegistryKey? run = Registry.CurrentUser.OpenSubKey(_options.RunKeyPath);
-        using RegistryKey? policy = Registry.CurrentUser.OpenSubKey(_options.PolicyRunKeyPath);
         using RegistryKey? mark = Registry.CurrentUser.OpenSubKey(_options.StartupApprovedKeyPath);
         Assert.Equal(command, run!.GetValue(_options.RunValueName));
-        Assert.Equal(command, policy!.GetValue(_options.RunValueName));
         Assert.False(StartupRegistrar.IsTurnedOff((byte[])mark!.GetValue(_options.RunValueName)!));
         Assert.Equal(1, _task.Writes);
     }
 
     [Fact]
-    public void A_locked_hidden_list_does_not_stop_the_off_switch_being_put_back()
+    public void The_same_failure_three_times_stops_that_hook_for_this_run()
     {
         WriteOffMark(LiveOffMark);
-        InstallOptions options = WithLockedHiddenList();
+        DenyWrites(_options.StartupApprovedKeyPath);
 
-        TryEnsure(options);
+        for (int i = 0; i < StartupRegistrar.SameFailureLimit; i++)
+        {
+            TryEnsure(_options);
+        }
 
-        using RegistryKey? mark = Registry.CurrentUser.OpenSubKey(options.StartupApprovedKeyPath);
-        Assert.False(StartupRegistrar.IsTurnedOff((byte[])mark!.GetValue(options.RunValueName)!));
-    }
+        int asked = StartupRegistrar.Attempts(_options.StartupApprovedKeyPath);
+        Assert.Equal(StartupRegistrar.SameFailureLimit, asked);
 
-    [Fact]
-    public void A_locked_hidden_list_does_not_stop_the_repeating_task_being_put_back()
-    {
-        WriteOffMark(LiveOffMark);
-        InstallOptions options = WithLockedHiddenList();
+        TryEnsure(_options);
+        TryEnsure(_options);
 
-        TryEnsure(options);
-
+        Assert.Equal(asked, StartupRegistrar.Attempts(_options.StartupApprovedKeyPath));
         Assert.Equal(1, _task.Writes);
     }
 
     [Fact]
-    public void A_refused_hook_is_not_asked_again_this_run()
+    public void A_different_failure_starts_the_count_again()
     {
-        WriteOffMark(LiveOffMark);
-        InstallOptions options = WithLockedHiddenList();
-        StartupRegistrar.Ensure(options, options.SourceExe, _task);
-        int asked = StartupRegistrar.Attempts(options.PolicyRunKeyPath);
+        var failing = new FailingTask { Error = new UnauthorizedAccessException() };
+        string hook = "task:" + _options.RunKeyPath;
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
+        failing.Error = new IOException("different");
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
 
-        StartupRegistrar.Ensure(options, options.SourceExe, _task);
+        int asked = StartupRegistrar.Attempts(hook);
+        Assert.Equal(3, asked);
 
-        Assert.True(asked >= 1);
-        Assert.Equal(asked, StartupRegistrar.Attempts(options.PolicyRunKeyPath));
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
+        Assert.Equal(5, StartupRegistrar.Attempts(hook));
+
+        StartupRegistrar.EnsureRepeatingTask(_options, _options.SourceExe, failing);
+        Assert.Equal(5, StartupRegistrar.Attempts(hook));
     }
 
     [Fact]
@@ -161,10 +164,10 @@ public sealed class StartupRegistrarTests : IDisposable
     }
 
     [Fact]
-    public void A_locked_hidden_list_does_not_stop_uninstall_removing_the_rest()
+    public void A_locked_off_switch_does_not_stop_uninstall_removing_the_rest()
     {
         StartupRegistrar.Ensure(_options, _options.SourceExe, _task);
-        DenyWrites(_options.PolicyRunKeyPath);
+        DenyWrites(_options.StartupApprovedKeyPath);
 
         StartupRegistrar.Remove(_options, _task);
 
@@ -185,10 +188,8 @@ public sealed class StartupRegistrarTests : IDisposable
         StartupRegistrar.Remove(_options, _task);
 
         using RegistryKey? run = Registry.CurrentUser.OpenSubKey(_options.RunKeyPath);
-        using RegistryKey? policy = Registry.CurrentUser.OpenSubKey(_options.PolicyRunKeyPath);
         using RegistryKey? mark = Registry.CurrentUser.OpenSubKey(_options.StartupApprovedKeyPath);
         Assert.True(run is null || run.GetValue(_options.RunValueName) is null);
-        Assert.True(policy is null || policy.GetValue(_options.RunValueName) is null);
         Assert.True(mark is null || mark.GetValue(_options.RunValueName) is null);
         Assert.Equal(1, _task.Deletes);
     }
@@ -245,21 +246,6 @@ public sealed class StartupRegistrarTests : IDisposable
         approved.SetValue(_options.RunValueName, mark, RegistryValueKind.Binary);
     }
 
-    private InstallOptions WithLockedHiddenList()
-    {
-        string parent = _root + @"\LockedPolicies";
-        DenyWrites(parent);
-        return new InstallOptions
-        {
-            SourceExe = _options.SourceExe,
-            InstallDir = _options.InstallDir,
-            RunKeyPath = _options.RunKeyPath,
-            PolicyRunKeyPath = parent + @"\Run",
-            StartupApprovedKeyPath = _options.StartupApprovedKeyPath,
-            TaskName = null,
-        };
-    }
-
     /// <summary>The live refusal: the key can be read, and creating or writing under it is denied.</summary>
     private void DenyWrites(string subKeyPath)
     {
@@ -284,6 +270,19 @@ public sealed class StartupRegistrarTests : IDisposable
         catch (UnauthorizedAccessException)
         {
             // The repair gives up here today. The asserts are what should have happened anyway.
+        }
+    }
+
+    private sealed class FailingTask : IStartupTask
+    {
+        public Exception Error { get; set; } = new InvalidOperationException();
+
+        public StartupTaskStatus Read() => throw Error;
+
+        public void Write(string exePath) => throw Error;
+
+        public void Delete()
+        {
         }
     }
 

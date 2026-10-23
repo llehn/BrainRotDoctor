@@ -1396,6 +1396,57 @@ supported mode either way.
 - Public documentation does not describe how to remove the registrations by hand
   (ADR-001).
 
+### ADR-018: Each Sign-In Hook Is Asked on Its Own Clock
+
+- **Status:** Accepted
+- **Date:** 2026-10-23
+- **Amends:** ADR-017 (the second sign-in list, and how often registration is put back)
+
+#### Context
+
+ADR-017 added a sign-in list the Startup apps page does not show. A normal user
+cannot write that list. Windows refuses it. The repair treated that refusal as
+a failure of the whole repair, so the off switch stayed off and the repeating
+task was never created.
+
+The off switch is cheap to check, and it is the one someone can flip while
+watching. The repeating task is not. Asking it every second does not make a kill
+harder. The kill is already a fraction of a second. Asking it only when the
+switch is broken would hide a deleted task for the rest of the session.
+
+#### Decision
+
+- The sign-in list a normal user cannot write is not a hook. Uninstall still
+  clears a leftover from the earlier build.
+- The off switch is put back every second.
+- The repeating task is put back at start and once a minute, whether or not the
+  switch is on. A healthy switch covers reboot. It does not cover a dead app
+  for the rest of the session.
+- The same failure three times in a row retires that hook for the run. A success,
+  or a different failure, starts the count again. The next start starts at zero.
+
+#### Rejected Alternatives
+
+**Keep the locked list and skip it after one refusal.** Rejected. It adds no
+friction on a normal Windows, and every start would learn the same no.
+
+**Check the task only while the switch is broken.** Rejected. A healthy switch
+would then hide a deleted task until reboot. Ending both processes in that gap
+would stick for the rest of the session.
+
+**Retire a hook after one failure.** Rejected. One no can be a blip. Three of
+the same no is the hook not working.
+
+**Keep asking a failing hook every second.** Rejected. The cost continues after
+the answer is known.
+
+#### Consequences
+
+- A hook that fails the same way three times is absent until the next start.
+  The other hook still covers reboot if it is healthy.
+- The minute check of the task is the expensive question. It is not on the
+  switch's clock.
+
 ## Contributing, License, and Security
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for build,

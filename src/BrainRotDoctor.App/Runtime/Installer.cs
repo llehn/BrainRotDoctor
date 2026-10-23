@@ -14,8 +14,11 @@ internal sealed class InstallOptions
     public string RunKeyPath { get; init; } = @"Software\Microsoft\Windows\CurrentVersion\Run";
     public string RunValueName { get; init; } = "BrainRotDoctor";
 
-    /// <summary>Sign-in list the Startup apps page does not show. Null is not used; tests point this at a private key.</summary>
-    public string PolicyRunKeyPath { get; init; } =
+    /// <summary>
+    /// An earlier build tried to write this list. A normal user cannot. Uninstall
+    /// still clears a leftover so it cannot start the app after removal.
+    /// </summary>
+    public const string LeftoverHiddenList =
         @"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run";
 
     /// <summary>The Startup apps off mark for the login entry. Tests point this at a private key.</summary>
