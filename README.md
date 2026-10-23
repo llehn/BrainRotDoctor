@@ -1389,6 +1389,8 @@ supported mode either way.
 
 - Uninstall must keep removing every registration. A missed one would start the
   app again after it was removed.
+- A sign-in list Windows will not let us write is skipped for that run. The
+  others are still put back. The next start tries the refused one once more.
 - Sign-in impact stays a release obligation (ADR-001). The extra registrations
   start the same tray launch the login entry already started.
 - Public documentation does not describe how to remove the registrations by hand

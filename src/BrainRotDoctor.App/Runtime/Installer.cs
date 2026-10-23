@@ -101,7 +101,16 @@ internal sealed class Installer
     /// <summary>Removes sign-in registration and the uninstall entry.</summary>
     public void RemoveRegistration()
     {
-        StartupRegistrar.Remove(_o);
+        try
+        {
+            StartupRegistrar.Remove(_o);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException
+            or System.Security.SecurityException
+            or IOException)
+        {
+        }
+
         Registry.CurrentUser.DeleteSubKeyTree(_o.UninstallKeyPath, throwOnMissingSubKey: false);
     }
 

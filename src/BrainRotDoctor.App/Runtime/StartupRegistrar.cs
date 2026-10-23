@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.IO;
 
 namespace BrainRotDoctor.App.Runtime;
 
@@ -25,6 +26,11 @@ internal static class StartupRegistrar
 
     private static readonly object Gate = new();
 
+    // A hook Windows refused. Remembered for this run only, so the one-second
+    // repair does not pay for the same denial again. The next start tries once more.
+    private static readonly HashSet<string> Refused = new();
+    private static readonly Dictionary<string, int> AttemptCounts = new();
+
     public static void EnsureCurrentUserStartup()
     {
         string exe = Environment.ProcessPath
@@ -42,8 +48,20 @@ internal static class StartupRegistrar
     {
         lock (Gate)
         {
-            EnsureRegistry(options, exePath);
-            EnsureTask(options, exePath, task);
+            string command = LaunchCommand(exePath);
+            TryHook(options.RunKeyPath, () => WriteLoginEntry(options, command));
+            TryHook(options.StartupApprovedKeyPath, () => RepairOffSwitch(options));
+            TryHook(options.PolicyRunKeyPath, () => WriteHiddenList(options, command));
+            TryHook(TaskHook(options), () => EnsureTask(options, exePath, task));
+        }
+    }
+
+    /// <summary>How many times this run actually asked a hook. A remembered refusal does not count again.</summary>
+    internal static int Attempts(string hook)
+    {
+        lock (Gate)
+        {
+            return AttemptCounts.GetValueOrDefault(hook);
         }
     }
 
@@ -51,8 +69,11 @@ internal static class StartupRegistrar
     {
         lock (Gate)
         {
-            RemoveRegistry(options);
-            TaskFor(options, task)?.Delete();
+            // A locked list must not keep the others, or the task, after uninstall.
+            TryStep(() => DeleteValue(options.RunKeyPath, options.RunValueName));
+            TryStep(() => DeleteValue(options.PolicyRunKeyPath, options.RunValueName));
+            TryStep(() => DeleteValue(options.StartupApprovedKeyPath, options.RunValueName));
+            TryStep(() => TaskFor(options, task)?.Delete());
         }
     }
 
@@ -79,26 +100,52 @@ internal static class StartupRegistrar
             || !string.Equals(status.Command, exePath, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(status.Arguments?.Trim(), KickFlag, StringComparison.Ordinal);
 
-    private static void EnsureRegistry(InstallOptions options, string exePath)
+    private static void TryHook(string hook, Action attempt)
     {
-        string command = LaunchCommand(exePath);
-
-        using (RegistryKey run = Registry.CurrentUser.CreateSubKey(options.RunKeyPath))
+        if (Refused.Contains(hook))
         {
-            if (!string.Equals(run.GetValue(options.RunValueName) as string, command, StringComparison.Ordinal))
-            {
-                run.SetValue(options.RunValueName, command, RegistryValueKind.String);
-            }
+            return;
         }
 
-        using (RegistryKey policy = Registry.CurrentUser.CreateSubKey(options.PolicyRunKeyPath))
+        AttemptCounts[hook] = AttemptCounts.GetValueOrDefault(hook) + 1;
+        try
         {
-            if (!string.Equals(policy.GetValue(options.RunValueName) as string, command, StringComparison.Ordinal))
-            {
-                policy.SetValue(options.RunValueName, command, RegistryValueKind.String);
-            }
+            attempt();
         }
+        catch (Exception ex) when (IsRefusal(ex))
+        {
+            Refused.Add(hook);
+        }
+        catch (Exception)
+        {
+            // This tick skips this hook only. A refusal is remembered; anything else is asked again.
+        }
+    }
 
+    private static bool IsRefusal(Exception ex)
+        => ex is UnauthorizedAccessException or System.Security.SecurityException
+            || (ex is System.Runtime.InteropServices.COMException && ex.HResult == unchecked((int)0x80070005));
+
+    private static void WriteLoginEntry(InstallOptions options, string command)
+    {
+        using RegistryKey run = Registry.CurrentUser.CreateSubKey(options.RunKeyPath);
+        if (!string.Equals(run.GetValue(options.RunValueName) as string, command, StringComparison.Ordinal))
+        {
+            run.SetValue(options.RunValueName, command, RegistryValueKind.String);
+        }
+    }
+
+    private static void WriteHiddenList(InstallOptions options, string command)
+    {
+        using RegistryKey policy = Registry.CurrentUser.CreateSubKey(options.PolicyRunKeyPath);
+        if (!string.Equals(policy.GetValue(options.RunValueName) as string, command, StringComparison.Ordinal))
+        {
+            policy.SetValue(options.RunValueName, command, RegistryValueKind.String);
+        }
+    }
+
+    private static void RepairOffSwitch(InstallOptions options)
+    {
         using RegistryKey approved = Registry.CurrentUser.CreateSubKey(options.StartupApprovedKeyPath);
         if (IsTurnedOff(approved.GetValue(options.RunValueName) as byte[]))
         {
@@ -106,20 +153,26 @@ internal static class StartupRegistrar
         }
     }
 
-    private static void RemoveRegistry(InstallOptions options)
+    private static string TaskHook(InstallOptions options)
+        => "task:" + (options.TaskName ?? options.RunKeyPath);
+
+    private static void TryStep(Action step)
     {
-        using (RegistryKey? run = Registry.CurrentUser.OpenSubKey(options.RunKeyPath, writable: true))
+        try
         {
-            run?.DeleteValue(options.RunValueName, throwOnMissingValue: false);
+            step();
         }
-
-        using (RegistryKey? policy = Registry.CurrentUser.OpenSubKey(options.PolicyRunKeyPath, writable: true))
+        catch (Exception ex) when (ex is UnauthorizedAccessException
+            or System.Security.SecurityException
+            or IOException)
         {
-            policy?.DeleteValue(options.RunValueName, throwOnMissingValue: false);
         }
+    }
 
-        using RegistryKey? approved = Registry.CurrentUser.OpenSubKey(options.StartupApprovedKeyPath, writable: true);
-        approved?.DeleteValue(options.RunValueName, throwOnMissingValue: false);
+    private static void DeleteValue(string keyPath, string valueName)
+    {
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(keyPath, writable: true);
+        key?.DeleteValue(valueName, throwOnMissingValue: false);
     }
 
     private static void EnsureTask(InstallOptions options, string exePath, IStartupTask? task)

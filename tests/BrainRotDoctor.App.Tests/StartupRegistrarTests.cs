@@ -1,5 +1,7 @@
 using BrainRotDoctor.App.Runtime;
 using Microsoft.Win32;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Xunit;
 
 namespace BrainRotDoctor.App.Tests;
@@ -9,6 +11,10 @@ public sealed class StartupRegistrarTests : IDisposable
     private readonly string _root = $@"Software\BrainRotDoctorTests\{Guid.NewGuid():N}";
     private readonly InstallOptions _options;
     private readonly RecordingStartupTask _task = new();
+    private readonly List<string> _locked = new();
+
+    /// <summary>The off stamp Startup apps wrote on the machine where the switch stayed off.</summary>
+    private static readonly byte[] LiveOffMark = [0x01, 0x00, 0x00, 0x00, 0x68, 0xD1, 0xC0, 0xA7, 0xC3, 0x62, 0xDD, 0x01];
 
     public StartupRegistrarTests()
     {
@@ -62,6 +68,69 @@ public sealed class StartupRegistrarTests : IDisposable
     }
 
     [Fact]
+    public void A_locked_hidden_list_does_not_stop_the_off_switch_being_put_back()
+    {
+        WriteOffMark(LiveOffMark);
+        InstallOptions options = WithLockedHiddenList();
+
+        TryEnsure(options);
+
+        using RegistryKey? mark = Registry.CurrentUser.OpenSubKey(options.StartupApprovedKeyPath);
+        Assert.False(StartupRegistrar.IsTurnedOff((byte[])mark!.GetValue(options.RunValueName)!));
+    }
+
+    [Fact]
+    public void A_locked_hidden_list_does_not_stop_the_repeating_task_being_put_back()
+    {
+        WriteOffMark(LiveOffMark);
+        InstallOptions options = WithLockedHiddenList();
+
+        TryEnsure(options);
+
+        Assert.Equal(1, _task.Writes);
+    }
+
+    [Fact]
+    public void A_refused_hook_is_not_asked_again_this_run()
+    {
+        WriteOffMark(LiveOffMark);
+        InstallOptions options = WithLockedHiddenList();
+        StartupRegistrar.Ensure(options, options.SourceExe, _task);
+        int asked = StartupRegistrar.Attempts(options.PolicyRunKeyPath);
+
+        StartupRegistrar.Ensure(options, options.SourceExe, _task);
+
+        Assert.True(asked >= 1);
+        Assert.Equal(asked, StartupRegistrar.Attempts(options.PolicyRunKeyPath));
+    }
+
+    [Fact]
+    public void A_working_off_switch_is_still_checked_every_pass()
+    {
+        WriteOffMark(LiveOffMark);
+        StartupRegistrar.Ensure(_options, _options.SourceExe, _task);
+        int asked = StartupRegistrar.Attempts(_options.StartupApprovedKeyPath);
+
+        WriteOffMark(LiveOffMark);
+        StartupRegistrar.Ensure(_options, _options.SourceExe, _task);
+
+        Assert.True(StartupRegistrar.Attempts(_options.StartupApprovedKeyPath) > asked);
+        using RegistryKey? mark = Registry.CurrentUser.OpenSubKey(_options.StartupApprovedKeyPath);
+        Assert.False(StartupRegistrar.IsTurnedOff((byte[])mark!.GetValue(_options.RunValueName)!));
+    }
+
+    [Fact]
+    public void A_locked_off_switch_does_not_stop_the_repeating_task_being_put_back()
+    {
+        WriteOffMark(LiveOffMark);
+        DenyWrites(_options.StartupApprovedKeyPath);
+
+        TryEnsure(_options);
+
+        Assert.Equal(1, _task.Writes);
+    }
+
+    [Fact]
     public void Ensure_leaves_an_on_mark_alone_and_does_not_rewrite_a_healthy_task()
     {
         byte[] on = [0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -89,6 +158,19 @@ public sealed class StartupRegistrarTests : IDisposable
         _task.Status = new StartupTaskStatus(true, true, @"C:\other\BrainRotDoctor.exe", StartupRegistrar.KickFlag, 1);
         StartupRegistrar.Ensure(_options, _options.SourceExe, _task);
         Assert.Equal(2, _task.Writes);
+    }
+
+    [Fact]
+    public void A_locked_hidden_list_does_not_stop_uninstall_removing_the_rest()
+    {
+        StartupRegistrar.Ensure(_options, _options.SourceExe, _task);
+        DenyWrites(_options.PolicyRunKeyPath);
+
+        StartupRegistrar.Remove(_options, _task);
+
+        Assert.Equal(1, _task.Deletes);
+        using RegistryKey? run = Registry.CurrentUser.OpenSubKey(_options.RunKeyPath);
+        Assert.True(run is null || run.GetValue(_options.RunValueName) is null);
     }
 
     [Fact]
@@ -127,12 +209,81 @@ public sealed class StartupRegistrarTests : IDisposable
 
     public void Dispose()
     {
+        foreach (string path in _locked)
+        {
+            try
+            {
+                using RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                    path,
+                    RegistryRights.ChangePermissions | RegistryRights.ReadKey)!;
+                RegistrySecurity security = key.GetAccessControl();
+                security.RemoveAccessRuleAll(new RegistryAccessRule(
+                    WindowsIdentity.GetCurrent().User!,
+                    RegistryRights.CreateSubKey | RegistryRights.SetValue,
+                    InheritanceFlags.None,
+                    PropagationFlags.None,
+                    AccessControlType.Deny));
+                key.SetAccessControl(security);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         try
         {
             Registry.CurrentUser.DeleteSubKeyTree(_root, throwOnMissingSubKey: false);
         }
         catch (Exception)
         {
+        }
+    }
+
+    private void WriteOffMark(byte[] mark)
+    {
+        using RegistryKey approved = Registry.CurrentUser.CreateSubKey(_options.StartupApprovedKeyPath);
+        approved.SetValue(_options.RunValueName, mark, RegistryValueKind.Binary);
+    }
+
+    private InstallOptions WithLockedHiddenList()
+    {
+        string parent = _root + @"\LockedPolicies";
+        DenyWrites(parent);
+        return new InstallOptions
+        {
+            SourceExe = _options.SourceExe,
+            InstallDir = _options.InstallDir,
+            RunKeyPath = _options.RunKeyPath,
+            PolicyRunKeyPath = parent + @"\Run",
+            StartupApprovedKeyPath = _options.StartupApprovedKeyPath,
+            TaskName = null,
+        };
+    }
+
+    /// <summary>The live refusal: the key can be read, and creating or writing under it is denied.</summary>
+    private void DenyWrites(string subKeyPath)
+    {
+        using RegistryKey key = Registry.CurrentUser.CreateSubKey(subKeyPath);
+        RegistrySecurity security = key.GetAccessControl();
+        security.AddAccessRule(new RegistryAccessRule(
+            WindowsIdentity.GetCurrent().User!,
+            RegistryRights.CreateSubKey | RegistryRights.SetValue,
+            InheritanceFlags.None,
+            PropagationFlags.None,
+            AccessControlType.Deny));
+        key.SetAccessControl(security);
+        _locked.Add(subKeyPath);
+    }
+
+    private void TryEnsure(InstallOptions options)
+    {
+        try
+        {
+            StartupRegistrar.Ensure(options, options.SourceExe, _task);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The repair gives up here today. The asserts are what should have happened anyway.
         }
     }
 
