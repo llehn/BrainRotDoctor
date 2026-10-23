@@ -1,8 +1,8 @@
 namespace BrainRotDoctor.App.Ui;
 
 /// <summary>
-/// Strings for the one length picker shared by pause and strict mode, the
-/// pause limit, and the okay sites (counted together, shown on request).
+/// Strings for choosing how long (strict mode and pause), the pause limit, and
+/// the okay sites (counted together, shown on request).
 /// Merged into the tables by <see cref="Strings.BuildTables"/>.
 /// </summary>
 internal static partial class Strings

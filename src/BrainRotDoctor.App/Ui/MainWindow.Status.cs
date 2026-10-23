@@ -39,6 +39,14 @@ internal sealed partial class MainWindow
     private Control StatusScreen()
     {
         Control screen = WithSidebar(BuildStatusPage(), scrolls: false);
+        if (_pauseOpen && !_status.IsPaused && !_status.StrictMode.IsActive)
+        {
+            var dialog = new Overlay(screen, PauseSheet());
+            dialog.Dismissed += (_, _) => ClosePause();
+            return dialog;
+        }
+
+        _pauseOpen = false;
         if (_openSite is null && _openApp is null)
         {
             return screen;
@@ -114,7 +122,7 @@ internal sealed partial class MainWindow
 
     // ----- Pause -----
 
-    /// <summary>Pause (the same choices as strict mode), Resume while paused, unavailable in strict mode.</summary>
+    /// <summary>A short break (its own dialog), Resume while paused, unavailable in strict mode.</summary>
     private Control PauseControl()
     {
         if (_status.IsPaused)
@@ -124,7 +132,7 @@ internal sealed partial class MainWindow
             return resume;
         }
 
-        var pause = new PillButton(Loc.T("pause"), ButtonKind.Secondary, Glyph.Pause);
+        var pause = new PillButton(Loc.T("take_break"), ButtonKind.Secondary, Glyph.Pause);
         if (_status.StrictMode.IsActive)
         {
             pause.Enabled = false;
@@ -132,25 +140,9 @@ internal sealed partial class MainWindow
             return pause;
         }
 
-        var menu = new PopupMenu(PickerWidth + 12);
-        menu.AddHeading(Loc.T("pause_for"));
-        Control picker = DurationPicker(DurationUse.Pause, length =>
-        {
-            menu.Hide();
-            _controller.Pause(length);
-        });
-        menu.AddContent(picker);
-        pause.Click += (_, _) => menu.ShowAt(pause);
-#if DEBUG
-        _pauseMenu = (menu, pause, picker);
-#endif
+        pause.Click += (_, _) => OpenPause();
         return pause;
     }
-
-#if DEBUG
-    // The pause choices of the current screen, for the snapshots.
-    private (PopupMenu Menu, Control Anchor, Control Content)? _pauseMenu;
-#endif
 
     /// <summary>What a pause means and how long it has left; Resume is the button in the header.</summary>
     private Control PausedNote(PauseState pause)
@@ -168,7 +160,7 @@ internal sealed partial class MainWindow
 
     // ----- Strict mode -----
 
-    /// <summary>Off: needs attention, with one-click shortcuts. Activating: a moment to cancel. On: calm.</summary>
+    /// <summary>Off: an ink card asking for a long lock. Activating: a moment to cancel. On: calm.</summary>
     private Control StrictBar()
     {
         if (_status.StrictMode.IsActive)
@@ -193,11 +185,7 @@ internal sealed partial class MainWindow
             return new Banner(Tone.Accent, Glyph.Lock, Banner.Message(Tone.Accent, new Phrase(Loc.T("strict_activating"), Strong: true)), cancel);
         }
 
-        TextLine off = _status.IsPaused
-            ? Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true), new Phrase(" · " + Loc.T("strict_ends_pause")))
-            : Banner.Message(Tone.Warn, new Phrase(Loc.T("strict_off"), Strong: true));
-        Control picker = DurationPicker(DurationUse.Strict, length => BeginStrict(DateTimeOffset.Now + length));
-        return new Banner(Tone.Warn, Glyph.Lock, Layout.Column(Space.S3, off, picker));
+        return StrictCard();
     }
 
     private void BeginStrict(DateTimeOffset end)

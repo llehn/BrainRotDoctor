@@ -73,6 +73,25 @@ public static class Layout
         return wrap;
     }
 
+    /// <summary>Children in one row of equal columns that fill the width, all as tall as the tallest.</summary>
+    public static Grid EqualColumns(double gap, params Control[] children)
+    {
+        var grid = new Grid();
+        for (int i = 0; i < children.Length; i++)
+        {
+            if (i > 0)
+            {
+                grid.ColumnDefinitions.Add(new ColumnDefinition(gap, GridUnitType.Pixel));
+            }
+
+            grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
+            Grid.SetColumn(children[i], i * 2);
+            grid.Children.Add(children[i]);
+        }
+
+        return grid;
+    }
+
     /// <summary>Fades content that is present but currently not in effect.</summary>
     public static T Inactive<T>(T control) where T : Control
     {

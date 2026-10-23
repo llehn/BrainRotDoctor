@@ -50,8 +50,8 @@ internal sealed partial class MainWindow : AppWindow
         Title = "BrainRotDoctor";
         Width = 1120;
         Height = 760;
-        // Wide enough for every two-pane screen (strict mode setup is the widest)
-        // to stay side by side; there is no stacked layout.
+        // Wide enough for every two-pane screen to stay side by side; there is no
+        // stacked layout.
         MinWidth = 1000;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -85,6 +85,7 @@ internal sealed partial class MainWindow : AppWindow
             _justUntracked = null;
         }
 
+        _pauseOpen = false;
         _page = page;
         Rerender();
     }

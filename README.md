@@ -76,15 +76,24 @@ for today only and cleared at midnight (`src/BrainRotDoctor.Core/Activity`).
 Sites are split where the time goes (a section with at least a quarter of its
 parent's time and two minutes gets its own part).
 
-**Strict mode is a flag**: on until a time, knowing nothing about rules. The
-status view turns it on in one click (1 hour, 2 hours, until 18:00 while at
-least two hours of the day are left, rest of today), with three seconds to
-cancel a slip; the Strict mode screen picks any length. While it is on, the
-rules side only accepts changes that make blocking stricter: adding a rule and
-switching a rule on work; changing, switching off or deleting one doesn't
-(`RuleGuard`). The rules as last accepted are kept apart, so a hand edit of
-the config file during strict mode is undone at the next start. Off is shown
-as needing attention (amber); on is calm.
+**Strict mode is a flag**: on until a time, knowing nothing about rules. While
+it is off, Status and the Strict mode screen show the same dark card that
+**leans long**: the longest choice first (until tomorrow 08:00), the rest of
+the work day (until 18:00, while at least two hours of it are left) picked
+already and marked Recommended, then 4 and 2 hours; another length is hours or
+days, never minutes. One click on the button locks, with three seconds to
+cancel a slip. While it is on, the rules side only accepts changes that make
+blocking stricter: adding a rule and switching a rule on work; changing,
+switching off or deleting one doesn't (`RuleGuard`). The rules as last
+accepted are kept apart, so a hand edit of the config file during strict mode
+is undone at the next start.
+
+**A pause leans short**, in a dialog of its own: 5, 10 or 15 minutes with 5
+picked, "Keep blocking" as big as the pause button, and how long blocking was
+already paused today on top. A longer pause goes up one minute per press
+(down is quick, holding repeats), and past 15 minutes its button has to be
+held for three seconds; from 30 minutes on it asks whether it's worth it.
+Every pause ends by itself, after at most 24 hours.
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. If either role is frozen, the other wakes it.

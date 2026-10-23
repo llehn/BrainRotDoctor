@@ -78,10 +78,14 @@ public static class Gallery
 
     private static Control Buttons()
     {
-        Control[] kinds = Enum.GetValues<ButtonKind>().Select(k => Labeled(k.ToString(), new PillButton(k.ToString(), k, k == ButtonKind.Primary ? Glyph.Plus : null))).ToArray();
+        Control[] kinds = Enum.GetValues<ButtonKind>()
+            .Where(k => k is not (ButtonKind.OnInk or ButtonKind.GhostOnInk))
+            .Select(k => Labeled(k.ToString(), new PillButton(k.ToString(), k, k == ButtonKind.Primary ? Glyph.Plus : null))).ToArray();
         var disabled = new PillButton("Disabled", ButtonKind.Primary) { Enabled = false };
+        var onInk = new Card(Layout.Row(Space.S3, new PillButton("OnInk", ButtonKind.OnInk, Glyph.Lock), new PillButton("GhostOnInk", ButtonKind.GhostOnInk, size: ButtonSize.Small)), CardStyle.Ink, CardPadding.Compact);
         return Layout.Column(Space.S4,
-            Wrap(Space.S4, kinds),
+            Wrap(Space.S4, kinds.Append(Labeled("OnInk, GhostOnInk", onInk)).ToArray()),
+            Labeled("HoldButton", new HoldButton("Hold to confirm", TimeSpan.FromSeconds(3)) { Width = 320 }),
             Wrap(Space.S4,
                 Labeled("Small", new PillButton("Small", ButtonKind.Accent, size: ButtonSize.Small)),
                 Labeled("Regular", new PillButton("Regular")),
@@ -107,6 +111,10 @@ public static class Gallery
             Wrap(Space.S6,
                 Labeled("CheckRow", new CheckRow("Feeds", "5 min / hour · All day", true) { Width = 280 }),
                 Labeled("ChoiceTile", Layout.Row(Space.S2, new ChoiceTile("4 hours", "until 15:00", true) { Width = 150 }, new ChoiceTile("1 day", "until tomorrow", false) { Width = 150 })),
+                Labeled("ChoiceTile, warn", Layout.Row(Space.S2, new ChoiceTile("5 min", "until 14:05", true, ChoiceTileStyle.Warn) { Width = 130 }, new ChoiceTile("10 min", "until 14:10", false, ChoiceTileStyle.Warn) { Width = 130 })),
+                Labeled("ChoiceTile, on ink, badge", new Card(Layout.Row(Space.S2,
+                    new ChoiceTile("A long one", "until 18:00", true, ChoiceTileStyle.OnInk, "Badge") { Width = 150 },
+                    new ChoiceTile("A short one", "until 15:00", false, ChoiceTileStyle.OnInk) { Width = 150 }), CardStyle.Ink, CardPadding.Compact)),
                 Labeled("PickTile", Layout.Row(Space.S3,
                     new PickTile(new TextLine("Picked", TextStyle.Strong), picked: true) { Width = 150 },
                     new PickTile(new TextLine("Not picked", TextStyle.Strong), picked: false) { Width = 150 },
@@ -120,6 +128,7 @@ public static class Gallery
         Labeled("TextField, title", new TextField("Editable title", style: TextFieldStyle.Title) { Width = 220 }),
         Labeled("Dropdown", new Dropdown(new[] { "Automatic", "English", "Deutsch" }, 1) { MinWidth = 200 }),
         Labeled("Stepper", new Stepper(5, 1, 59, "Fewer", "More")),
+        Labeled("Stepper, slow up", new Stepper(15, 1, 1440, "Fewer", "More", repeatUp: false)),
         Labeled("TimeField", new TimeField(new TimeOnly(9, 0), "Done") { Width = 140 }));
 
     private static Control Surfaces() => Layout.Column(Space.S4,

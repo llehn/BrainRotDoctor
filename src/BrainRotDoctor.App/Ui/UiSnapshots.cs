@@ -120,6 +120,8 @@ internal static class UiSnapshots
             Day = ActivityTally.DayOf(now),
             Places = places.ToDictionary(p => p.Key, p => new PlaceTotal { Seconds = p.Minutes * 60, Visits = p.Visits }),
             Apps = apps.Select((a, i) => (a, i)).ToDictionary(x => x.a.Key, x => new AppTotal { Seconds = appMinutes[x.i] * 60, Visits = 2, App = x.a }),
+            PausedToday = true,
+            PausedSeconds = 20 * 60,
         };
     }
 
@@ -216,25 +218,16 @@ internal static class UiSnapshots
             window.PreviewPage("status");
             await Shot("02b-status-paused");
             _controller.Resume();
-            window.PreviewCustomOpen = true;
+            window.PreviewPause(custom: false, minutes: 0);
+            await Shot("02c-pause");
+            window.PreviewPause(custom: true, minutes: 40);
+            await Shot("02c-pause-longer");
+            window.PreviewStrictCustom(true);
             window.PreviewPage("status");
             await Shot("02d-status-strict-custom", 900);
-            await Task.Delay(700);
-            if (window.PreviewPauseMenu() is { } menuContent)
-            {
-                await Task.Delay(700);
-                if (TopLevel.GetTopLevel(menuContent) is { } popup)
-                {
-                    var popupSize = new PixelSize((int)popup.Bounds.Width, (int)popup.Bounds.Height);
-                    using var popupBitmap = new RenderTargetBitmap(popupSize, new Vector(96, 96));
-                    popupBitmap.Render(popup);
-                    popupBitmap.Save(Path.Combine(_outDir, "02c-pause-picker.png"));
-                }
-            }
-
             window.PreviewPage("strict");
             await Shot("02e-strict-custom", 900);
-            window.PreviewCustomOpen = false;
+            window.PreviewStrictCustom(false);
             window.PreviewPage("home");
 
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");
@@ -373,17 +366,19 @@ internal sealed partial class MainWindow
         Rerender();
     }
 
-    /// <summary>Opens the pause choices; returns their content so its popup can be captured.</summary>
-    internal Control? PreviewPauseMenu()
+    /// <summary>The status view with the pause dialog open: the short breaks, or a longer one of so many minutes.</summary>
+    internal void PreviewPause(bool custom, int minutes)
     {
-        if (_pauseMenu is not { } open)
-        {
-            return null;
-        }
-
-        open.Menu.ShowAt(open.Anchor);
-        return open.Content;
+        PreviewPage("status");
+        _pauseOpen = true;
+        _pausePick = 0;
+        _pauseCustomOpen = custom;
+        _pauseCustomMinutes = custom ? minutes : HoldOver;
+        Rerender();
     }
+
+    /// <summary>Strict mode's custom length open, or closed.</summary>
+    internal void PreviewStrictCustom(bool open) => _strictCustomOpen = open;
 
     /// <summary>The status view with these sites okay and everything shown: their time as one grey tile.</summary>
     internal void PreviewEverything(params string[] okay)

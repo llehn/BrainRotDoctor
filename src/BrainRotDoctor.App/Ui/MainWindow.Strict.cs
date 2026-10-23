@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
 
     /// <summary>
     /// Strict mode is a flag on until a time, so setting it up is only choosing
-    /// how long, with the same choices as on Status. It knows nothing about rules;
+    /// how long, with the same card as on Status. It knows nothing about rules;
     /// the rules side refuses anything but tightening while it is on.
     /// </summary>
     private Control BuildStrictSetup()
@@ -39,14 +39,11 @@ internal sealed partial class MainWindow
         page.Children.Add(new PageHeader(Loc.T("strict_mode"), Loc.T("strict_subtitle")));
 
         // How long: picking starts the same short countdown as on Status, cancelled here too.
-        Control choose = _activation is not null
-            ? StrictBar()
-            : DurationPicker(DurationUse.Strict, length => BeginStrict(DateTimeOffset.Now + length));
-        var howLong = new Card(Layout.Column(Space.S4, new TextLine(Loc.T("how_long"), TextStyle.Subheading), choose), CardStyle.Surface, CardPadding.Roomy);
+        page.Children.Add(StrictBar());
 
         // While it's on + turning it on
         Control Consequence(string glyph, TextTone tone, string text) =>
-            Layout.Row(10, new Icon(glyph, 18, tone), new TextLine(text) { MaxWidth = 240 });
+            Layout.Row(10, new Icon(glyph, 18, tone), new TextLine(text));
 
         var whileOn = new Card(Layout.Column(14,
             new TextLine(Loc.T("while_on"), TextStyle.Subheading),
@@ -57,7 +54,7 @@ internal sealed partial class MainWindow
             new Divider(),
             new TextLine(Loc.T("no_early_exit"), TextStyle.Strong)), CardStyle.Surface, CardPadding.Roomy);
 
-        page.Children.Add(Layout.Columns(howLong, whileOn, 300, gap: Space.S5, fixedRight: true));
+        page.Children.Add(whileOn);
         return page;
     }
 

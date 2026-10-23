@@ -74,6 +74,8 @@ A rounded button with a label and optional leading icon.
 | DangerSolid | Filled danger | The same action, being confirmed |
 | Accent | Text, accent colour | Light constructive actions inside content ("Add a page") |
 | Warn | Soft amber, outlined | Leaving a temporary state ("Resume") |
+| OnInk | Filled surface colour | The main action on an ink card |
+| GhostOnInk | Text, muted on ink | Low-key actions on an ink card |
 
 `ButtonSize`: `Small` (28, inline next to a label), `Regular` (40), `Large`
 (48, the final action of a flow). States: hover (fades slightly), `Enabled =
@@ -81,6 +83,14 @@ false` (greyed, still shows its tooltip). `Stretch` fills the width. `Text` can
 change in place (e.g. "Add 2 websites").
 
 **Don't** put two Primary buttons side by side.
+
+### `HoldButton`
+A main action that only happens when held down: it looks like a large Primary
+button filling the width, fills from the left in amber while pressed, and
+raises `Held` once full. Letting go early empties it. `Text` can change in place.
+Use it to slow down an action the user should think twice about.
+
+**Don't** use it for everyday actions: one click is the norm.
 
 ### `IconButton`
 Square icon-only button; always has a tooltip. `IconButtonStyle.Outlined`
@@ -125,8 +135,16 @@ An outlined row with a check box, title and caption; the whole row toggles.
 For choosing items from a list.
 
 ### `ChoiceTile`
-One of a grid of choices with a title and a caption (e.g. a duration). The
-selected tile is filled ink.
+One of a grid of choices with a title and a caption (e.g. a duration), and an
+optional `badge` (an accent chip above the title, e.g. "Recommended").
+
+| `ChoiceTileStyle` | Selected looks | Use |
+|---|---|---|
+| Default | Filled ink | Choices on a surface |
+| OnInk | Surface colour; the others are dark | Choices on an ink card; taller, text at the bottom |
+| Warn | Soft amber, amber outline | Choosing a temporary state (a pause) |
+
+Lay a row of them out with `Layout.EqualColumns` so the row fills the width.
 
 ### `PickTile`
 A tile that can be added to a selection, with a round check in its corner.
@@ -151,6 +169,8 @@ A choice from a long list (more than fit a `Segmented`, e.g. languages).
 A whole number changed with − and +, never typed. Holding a button repeats and
 speeds up (×5 after 8 steps, ×10 after 20), so long ranges stay quick. Raises
 `Changed` after each step; screens update their model without rebuilding it.
+`repeatUp: false` makes + one step per press (− still repeats), for a number
+that should be slow to raise.
 
 ### `TimeField`
 A 24-hour time, picked from an hour and a minute column (5-minute steps),
@@ -282,7 +302,8 @@ Page title, optional subtitle, and the page's actions on the right.
 ### `Layout`
 Arrangement helpers: `Row` (side by side, centred), `Column`, `Columns` (two
 panes, always side by side, one of fixed width), `Tiles` (equal tiles, count
-per row follows the width), `Inactive` (fades content that's present but not
+per row follows the width), `EqualColumns` (one row of equal columns filling
+the width, all as tall as the tallest), `Inactive` (fades content that's present but not
 in effect, e.g. a switched-off item).
 
 ## Lists

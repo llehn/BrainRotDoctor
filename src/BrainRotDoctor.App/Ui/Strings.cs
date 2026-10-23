@@ -18,6 +18,7 @@ internal static partial class Strings
         MergeStrictStepper(tables);
         MergeStatus(tables);
         MergeDurations(tables);
+        MergeBreaks(tables);
         MergeCoverage(tables);
         MergeApps(tables);
         return tables;

@@ -108,6 +108,28 @@ public class ActivityTests
         Assert.Equal(10, restored.Snapshot().Places["x.com"].Seconds, 3);
     }
 
+    [Fact]
+    public void Paused_time_adds_up_over_the_day_and_starts_over_at_midnight()
+    {
+        var tally = new ActivityTally();
+        tally.Tick(null, T0);
+        for (int i = 1; i <= 90; i++)
+        {
+            tally.Tick(null, T0.AddSeconds(i));
+            if (i <= 30 || i > 60)
+            {
+                tally.MarkPaused(T0.AddSeconds(i));
+            }
+        }
+
+        Assert.Equal(60, tally.Snapshot().PausedSeconds, 3);
+        Assert.Equal(60, tally.Snapshot().Copy().PausedSeconds, 3);
+
+        tally.Tick(null, T0.AddDays(1));
+        tally.MarkPaused(T0.AddDays(1));
+        Assert.Equal(0, tally.Snapshot().PausedSeconds, 3);
+    }
+
     // ---------- Report ----------
 
     private static ActivityRecord Record(params (string Key, double Minutes, int Visits)[] places) => new()

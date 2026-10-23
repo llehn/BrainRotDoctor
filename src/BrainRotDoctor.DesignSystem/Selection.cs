@@ -287,23 +287,55 @@ public sealed class CheckRow : Border
     public event Action<bool>? Changed;
 }
 
-/// <summary>A tile among several choices: filled ink when selected.</summary>
+/// <summary>Where a <see cref="ChoiceTile"/> sits and how it shows that it's selected.</summary>
+public enum ChoiceTileStyle
+{
+    /// <summary>On a surface: the selected tile is filled ink.</summary>
+    Default,
+
+    /// <summary>On an ink card: dark tiles, the selected one in the surface colour. Taller, text at the bottom.</summary>
+    OnInk,
+
+    /// <summary>On a surface, choosing a temporary state: the selected tile is soft amber.</summary>
+    Warn,
+}
+
+/// <summary>A tile among several choices, optionally with a badge above its title.</summary>
 public sealed class ChoiceTile : Border
 {
-    public ChoiceTile(string title, string caption, bool selected)
+    public ChoiceTile(string title, string caption, bool selected, ChoiceTileStyle style = ChoiceTileStyle.Default, string? badge = null)
     {
-        Height = 64;
-        Padding = new Thickness(14, 0);
+        bool onInk = style == ChoiceTileStyle.OnInk;
+        (string surface, string outline, TextTone titleTone, TextTone captionTone) = (style, selected) switch
+        {
+            (ChoiceTileStyle.OnInk, true) => (Palette.Surface, Palette.Surface, TextTone.Primary, TextTone.Secondary),
+            (ChoiceTileStyle.OnInk, false) => (Palette.InkTrack, Palette.InkTrack, TextTone.OnInk, TextTone.OnInkMuted),
+            (ChoiceTileStyle.Warn, true) => (Palette.WarnSoft, Palette.Warn, TextTone.Warn, TextTone.Warn),
+            (_, true) => (Palette.Ink, Palette.Ink, TextTone.OnInk, TextTone.OnInk),
+            _ => (Palette.Surface, Palette.Border, TextTone.Primary, TextTone.Tertiary),
+        };
+
+        MinHeight = onInk ? 104 : 64;
+        Padding = new Thickness(14, onInk ? 12 : 8);
         CornerRadius = new CornerRadius(Radius.Inset);
         BorderThickness = new Thickness(1.5);
         Cursor = new Cursor(StandardCursorType.Hand);
         var text = Layout.Column(2,
-            new TextLine(title, TextStyle.Label, selected ? TextTone.OnInk : TextTone.Primary),
-            new TextLine(caption, TextStyle.Caption, selected ? TextTone.OnInk : TextTone.Tertiary) { FontSize = 12 });
-        text.VerticalAlignment = VerticalAlignment.Center;
-        Child = text;
-        this[!BackgroundProperty] = Palette.Dyn(selected ? Palette.Ink : Palette.Surface);
-        this[!BorderBrushProperty] = Palette.Dyn(selected ? Palette.Ink : Palette.Border);
+            new TextLine(title, TextStyle.Label, titleTone),
+            new TextLine(caption, TextStyle.Caption, captionTone) { FontSize = 12 });
+        text.VerticalAlignment = onInk ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+        var content = new DockPanel { LastChildFill = true };
+        if (badge is not null)
+        {
+            var chip = new Chip(badge, Tone.Accent) { Margin = new Thickness(0, 0, 0, Space.S2) };
+            DockPanel.SetDock(chip, Dock.Top);
+            content.Children.Add(chip);
+        }
+
+        content.Children.Add(text);
+        Child = content;
+        this[!BackgroundProperty] = Palette.Dyn(surface);
+        this[!BorderBrushProperty] = Palette.Dyn(outline);
         AddHandler(Gestures.TappedEvent, (_, e) =>
         {
             e.Handled = true;

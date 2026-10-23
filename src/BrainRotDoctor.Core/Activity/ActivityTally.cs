@@ -46,6 +46,11 @@ public sealed class ActivityRecord
     /// <summary>Blocking was paused at some point today.</summary>
     public bool PausedToday { get; set; }
 
+    /// <summary>How long blocking was paused today, all pauses together.</summary>
+    public double PausedSeconds { get; set; }
+
+    public TimeSpan PausedTime => TimeSpan.FromSeconds(PausedSeconds);
+
     /// <summary>Strict mode was on at some point today.</summary>
     public bool StrictToday { get; set; }
 
@@ -56,6 +61,7 @@ public sealed class ActivityRecord
         Apps = Apps.ToDictionary(a => a.Key, a => new AppTotal { Seconds = a.Value.Seconds, Visits = a.Value.Visits, App = a.Value.App }, StringComparer.Ordinal),
         OkaySeconds = OkaySeconds,
         PausedToday = PausedToday,
+        PausedSeconds = PausedSeconds,
         StrictToday = StrictToday,
     };
 }
@@ -82,6 +88,7 @@ public sealed class ActivityTally
     private HashSet<string> _untrackedApps = new(StringComparer.Ordinal);
     private string? _appInFront;
     private DateTimeOffset? _lastTick;
+    private TimeSpan _lastElapsed;
 
     /// <summary>
     /// Sites (by host) you marked as okay: their time is counted only into one
@@ -130,6 +137,7 @@ public sealed class ActivityTally
         }
 
         _lastTick = now;
+        _lastElapsed = elapsed;
 
         IReadOnlyList<string> keys = PlaceKey.Of(front);
         if (keys.Count > 0 && _untracked.Contains(keys[0]))
@@ -188,10 +196,17 @@ public sealed class ActivityTally
         _appInFront = appKey;
     }
 
+    /// <summary>Blocking is paused at <paramref name="now"/>: the time since the tick before counts as paused.</summary>
     public void MarkPaused(DateTimeOffset now)
     {
-        RollDay(now);
+        if (RollDay(now))
+        {
+            _lastElapsed = TimeSpan.Zero;
+        }
+
         _record.PausedToday = true;
+        _record.PausedSeconds += _lastElapsed.TotalSeconds;
+        _lastElapsed = TimeSpan.Zero;
     }
 
     public void MarkStrict(DateTimeOffset now)

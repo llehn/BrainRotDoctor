@@ -106,21 +106,24 @@ public sealed class Dropdown : ComboBox
 
 /// <summary>
 /// A whole number changed with − and + only, never typed. Holding a button
-/// repeats, and speeds up for long ranges.
+/// repeats, and speeds up for long ranges. With <c>repeatUp: false</c>, + only
+/// takes one step per press, so raising the number is slow on purpose.
 /// </summary>
 public sealed class Stepper : Border
 {
     private readonly int _min;
     private readonly int _max;
+    private readonly bool _repeatUp;
     private readonly TextLine _value;
     private readonly DispatcherTimer _repeat = new();
     private int _delta;
     private int _repeats;
 
-    public Stepper(int value, int min, int max, string fewerTip, string moreTip)
+    public Stepper(int value, int min, int max, string fewerTip, string moreTip, bool repeatUp = true)
     {
         _min = min;
         _max = max;
+        _repeatUp = repeatUp;
         Value = Math.Clamp(value, min, max);
         _value = new TextLine(Format(Value), TextStyle.Subheading) { FontSize = 18, Centered = true, MinWidth = 44 };
 
@@ -163,8 +166,11 @@ public sealed class Stepper : Border
             _delta = delta;
             _repeats = 0;
             Apply(delta);
-            _repeat.Interval = TimeSpan.FromMilliseconds(400);
-            _repeat.Start();
+            if (delta < 0 || _repeatUp)
+            {
+                _repeat.Interval = TimeSpan.FromMilliseconds(400);
+                _repeat.Start();
+            }
         };
         b.PointerReleased += (_, _) => _repeat.Stop();
         b.PointerCaptureLost += (_, _) => _repeat.Stop();
