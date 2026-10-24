@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Threading;
 
 namespace BrainRotDoctor.DesignSystem;
 
@@ -31,8 +30,11 @@ public enum ButtonKind
     /// <summary>The way out of a temporary state (e.g. resume): soft amber.</summary>
     Warn,
 
-    /// <summary>The main action on an ink card: filled with the surface colour.</summary>
+    /// <summary>The main action on an ink card: filled light, dark text.</summary>
     OnInk,
+
+    /// <summary>Another action on an ink card (cancel): outlined.</summary>
+    SecondaryOnInk,
 
     /// <summary>A low-key action on an ink card: muted text.</summary>
     GhostOnInk,
@@ -61,10 +63,11 @@ public sealed class PillButton : Border
         Kind = kind;
         TextTone fg = kind switch
         {
-            ButtonKind.Primary or ButtonKind.DangerSolid => TextTone.OnInk,
+            ButtonKind.Primary or ButtonKind.DangerSolid => TextTone.Inverse,
             ButtonKind.Ghost => TextTone.Secondary,
             ButtonKind.Danger => TextTone.Danger,
             ButtonKind.Accent => TextTone.Accent,
+            ButtonKind.SecondaryOnInk => TextTone.OnInk,
             ButtonKind.GhostOnInk => TextTone.OnInkMuted,
             _ => TextTone.Primary,
         };
@@ -76,6 +79,11 @@ public sealed class PillButton : Border
             _label.FontSize = 12.5;
         }
 
+        if (kind == ButtonKind.OnInk)
+        {
+            _label[!TextBlock.ForegroundProperty] = Palette.Dyn(Palette.InkPickText);
+        }
+
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -85,7 +93,13 @@ public sealed class PillButton : Border
         };
         if (glyph is not null)
         {
-            row.Children.Add(new Icon(glyph, small ? 14 : 16, fg));
+            var icon = new Icon(glyph, small ? 14 : 16, fg);
+            if (kind == ButtonKind.OnInk)
+            {
+                icon.SetColor(Palette.InkPickText);
+            }
+
+            row.Children.Add(icon);
         }
 
         if (text.Length > 0)
@@ -123,7 +137,11 @@ public sealed class PillButton : Border
                 this[!BorderBrushProperty] = Palette.Dyn(Palette.WarnBorder);
                 break;
             case ButtonKind.OnInk:
-                this[!BackgroundProperty] = Palette.Dyn(Palette.Surface);
+                this[!BackgroundProperty] = Palette.Dyn(Palette.InkPick);
+                break;
+            case ButtonKind.SecondaryOnInk:
+                BorderThickness = new Thickness(1);
+                this[!BorderBrushProperty] = Palette.Dyn(Palette.InkLine);
                 break;
         }
 
@@ -166,87 +184,6 @@ public sealed class PillButton : Border
     {
         get => HorizontalAlignment == HorizontalAlignment.Stretch;
         set => HorizontalAlignment = value ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
-    }
-}
-
-/// <summary>
-/// A main action that only happens when held down: it fills from the left while
-/// pressed and raises <see cref="Held"/> once full; letting go early empties it.
-/// Looks like a large <see cref="ButtonKind.Primary"/> button filling the width.
-/// </summary>
-public sealed class HoldButton : Border
-{
-    private readonly TextLine _label;
-    private readonly Border _fill;
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(16) };
-    private readonly TimeSpan _hold;
-    private DateTime _pressedAt;
-
-    public HoldButton(string text, TimeSpan hold, string? glyph = null)
-    {
-        _hold = hold;
-        _label = new TextLine(text, TextStyle.Strong, TextTone.OnInk) { TextWrapping = TextWrapping.NoWrap };
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = Space.S2,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        if (glyph is not null)
-        {
-            row.Children.Add(new Icon(glyph, 16, TextTone.OnInk));
-        }
-
-        row.Children.Add(_label);
-        _fill = new Border { Width = 0, HorizontalAlignment = HorizontalAlignment.Left, [!BackgroundProperty] = Palette.Dyn(Palette.WarnText) };
-        Child = new Grid { Children = { _fill, row } };
-
-        CornerRadius = new CornerRadius(Radius.Control);
-        ClipToBounds = true;
-        MinHeight = 48;
-        HorizontalAlignment = HorizontalAlignment.Stretch;
-        Cursor = new Cursor(StandardCursorType.Hand);
-        this[!BackgroundProperty] = Palette.Dyn(Palette.Ink);
-
-        PointerEntered += (_, _) => Opacity = 0.9;
-        PointerExited += (_, _) => Opacity = 1;
-        PointerPressed += (_, e) =>
-        {
-            e.Pointer.Capture(this);
-            _pressedAt = DateTime.UtcNow;
-            _timer.Start();
-        };
-        PointerReleased += (_, _) => Empty();
-        PointerCaptureLost += (_, _) => Empty();
-        DetachedFromVisualTree += (_, _) => Empty();
-        _timer.Tick += (_, _) =>
-        {
-            double held = (DateTime.UtcNow - _pressedAt) / _hold;
-            if (held < 1)
-            {
-                _fill.Width = Bounds.Width * held;
-                return;
-            }
-
-            Empty();
-            Held?.Invoke(this, EventArgs.Empty);
-        };
-    }
-
-    /// <summary>Raised once the button has been held down for the whole time.</summary>
-    public event EventHandler? Held;
-
-    public string Text
-    {
-        get => _label.Text ?? "";
-        set => _label.SetText(value);
-    }
-
-    private void Empty()
-    {
-        _timer.Stop();
-        _fill.Width = 0;
     }
 }
 

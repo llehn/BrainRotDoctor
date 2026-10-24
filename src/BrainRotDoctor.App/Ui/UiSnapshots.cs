@@ -225,6 +225,9 @@ internal static class UiSnapshots
             window.PreviewStrictCustom(true);
             window.PreviewPage("status");
             await Shot("02d-status-strict-custom", 900);
+            window.PreviewStrictActivating();
+            await Shot("02f-status-strict-custom-activating", 900);
+            window.PreviewStrictCancel();
             window.PreviewPage("strict");
             await Shot("02e-strict-custom", 900);
             window.PreviewStrictCustom(false);
@@ -281,6 +284,16 @@ internal static class UiSnapshots
             window.PreviewSite("reddit.com");
             await Shot("10b-status-site-dark", 900);
             window.PreviewSite(null);
+            window.PreviewStrictCustom(true);
+            window.PreviewPage("status");
+            await Shot("10c-status-strict-custom-dark", 900);
+            window.PreviewStrictActivating();
+            await Shot("10d-status-strict-custom-activating-dark", 900);
+            window.PreviewStrictCancel();
+            window.PreviewStrictCustom(false);
+            window.PreviewPause(custom: true, minutes: 40);
+            await Shot("10e-pause-longer-dark");
+            window.PreviewPage("status");
             window.PreviewPage("home");
             await Shot("10-home-dark");
             window.PreviewEditor(1, "instagram.com/?variant=following", "Following feed");
@@ -373,7 +386,7 @@ internal sealed partial class MainWindow
         _pauseOpen = true;
         _pausePick = 0;
         _pauseCustomOpen = custom;
-        _pauseCustomMinutes = custom ? minutes : HoldOver;
+        _pauseCustomMinutes = custom ? minutes : LongerFrom;
         Rerender();
     }
 

@@ -88,7 +88,9 @@ public sealed class ActivityTally
     private HashSet<string> _untrackedApps = new(StringComparer.Ordinal);
     private string? _appInFront;
     private DateTimeOffset? _lastTick;
-    private TimeSpan _lastElapsed;
+
+    // The whole time since the tick before, sleep included: a pause runs on while the PC sleeps.
+    private TimeSpan _lastGap;
 
     /// <summary>
     /// Sites (by host) you marked as okay: their time is counted only into one
@@ -130,14 +132,10 @@ public sealed class ActivityTally
     {
         // The gap before a new day's first tick belongs to the day before.
         bool newDay = RollDay(now);
-        TimeSpan elapsed = !newDay && _lastTick is { } last && now > last ? now - last : TimeSpan.Zero;
-        if (elapsed > MaxGap)
-        {
-            elapsed = MaxGap;
-        }
-
+        TimeSpan gap = !newDay && _lastTick is { } last && now > last ? now - last : TimeSpan.Zero;
+        TimeSpan elapsed = gap > MaxGap ? MaxGap : gap;
         _lastTick = now;
-        _lastElapsed = elapsed;
+        _lastGap = gap;
 
         IReadOnlyList<string> keys = PlaceKey.Of(front);
         if (keys.Count > 0 && _untracked.Contains(keys[0]))
@@ -196,17 +194,20 @@ public sealed class ActivityTally
         _appInFront = appKey;
     }
 
-    /// <summary>Blocking is paused at <paramref name="now"/>: the time since the tick before counts as paused.</summary>
+    /// <summary>
+    /// Blocking is paused at <paramref name="now"/>: the whole time since the tick
+    /// before counts as paused, also when the PC slept in between.
+    /// </summary>
     public void MarkPaused(DateTimeOffset now)
     {
         if (RollDay(now))
         {
-            _lastElapsed = TimeSpan.Zero;
+            _lastGap = TimeSpan.Zero;
         }
 
         _record.PausedToday = true;
-        _record.PausedSeconds += _lastElapsed.TotalSeconds;
-        _lastElapsed = TimeSpan.Zero;
+        _record.PausedSeconds += _lastGap.TotalSeconds;
+        _lastGap = TimeSpan.Zero;
     }
 
     public void MarkStrict(DateTimeOffset now)

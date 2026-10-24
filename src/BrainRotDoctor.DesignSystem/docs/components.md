@@ -33,7 +33,7 @@ derive from it; a test fails for any app window that doesn't.
 The spacing scale, `S0`–`S10`. The only values for margins, paddings and gaps.
 
 ### `Fonts`
-`Sans` (Inter) and `Mono` (Cascadia Mono). Used inside the system only.
+`Sans` (Inter, shipped with the app) and `Mono` (Cascadia Mono). Used inside the system only.
 
 ### `Glyph`
 The icon set, as path data for `Icon`.
@@ -74,7 +74,8 @@ A rounded button with a label and optional leading icon.
 | DangerSolid | Filled danger | The same action, being confirmed |
 | Accent | Text, accent colour | Light constructive actions inside content ("Add a page") |
 | Warn | Soft amber, outlined | Leaving a temporary state ("Resume") |
-| OnInk | Filled surface colour | The main action on an ink card |
+| OnInk | Filled light, dark text | The main action on an ink card |
+| SecondaryOnInk | Outlined on ink | Another action on an ink card (Cancel, in the main action's place) |
 | GhostOnInk | Text, muted on ink | Low-key actions on an ink card |
 
 `ButtonSize`: `Small` (28, inline next to a label), `Regular` (40), `Large`
@@ -83,14 +84,6 @@ false` (greyed, still shows its tooltip). `Stretch` fills the width. `Text` can
 change in place (e.g. "Add 2 websites").
 
 **Don't** put two Primary buttons side by side.
-
-### `HoldButton`
-A main action that only happens when held down: it looks like a large Primary
-button filling the width, fills from the left in amber while pressed, and
-raises `Held` once full. Letting go early empties it. `Text` can change in place.
-Use it to slow down an action the user should think twice about.
-
-**Don't** use it for everyday actions: one click is the norm.
 
 ### `IconButton`
 Square icon-only button; always has a tooltip. `IconButtonStyle.Outlined`
@@ -106,7 +99,8 @@ expandable card). Buttons inside keep their own clicks.
 ### `Segmented`
 Mutually exclusive options on a grey track; the selected one is raised. Give a
 `Segment` a `Tone` to fill it when selected (`Danger` "Block" / `Accent`
-"Allow"). `stretch` fills the width; `height` 36 for use inside rows. Use for
+"Allow"). `stretch` fills the width; `height` 36 for use inside rows; `onInk`
+on an ink card (dark track, the selected option light). Use for
 2–4 short options. More options → `Dropdown`; options that wrap → `RadioPill`.
 
 ### `Segment`
@@ -141,7 +135,7 @@ optional `badge` (an accent chip above the title, e.g. "Recommended").
 | `ChoiceTileStyle` | Selected looks | Use |
 |---|---|---|
 | Default | Filled ink | Choices on a surface |
-| OnInk | Surface colour; the others are dark | Choices on an ink card; taller, text at the bottom |
+| OnInk | Light; the others raised dark with an outline | Choices on an ink card; taller, text at the bottom |
 | Warn | Soft amber, amber outline | Choosing a temporary state (a pause) |
 
 Lay a row of them out with `Layout.EqualColumns` so the row fills the width.
@@ -166,11 +160,22 @@ leading `Glyph` or a literal `prefix` (e.g. the host before a path). Raises
 A choice from a long list (more than fit a `Segmented`, e.g. languages).
 
 ### `Stepper`
-A whole number changed with − and +, never typed. Holding a button repeats and
+A whole number changed with − and +, never typed: two square 44×44 buttons with
+the number between them. Holding a button repeats and
 speeds up (×5 after 8 steps, ×10 after 20), so long ranges stay quick. Raises
 `Changed` after each step; screens update their model without rebuilding it.
 `repeatUp: false` makes + one step per press (− still repeats), for a number
-that should be slow to raise.
+that should be slow to raise. `format` adds the unit ("5 h", "40 min");
+`stretch` lets the number take the width between the buttons.
+
+| `StepperStyle` | Looks | Use |
+|---|---|---|
+| Default | White buttons, grey outline | On a surface |
+| OnInk | See-through buttons, light outline | On an ink card (inside an `InkWell`) |
+| Warn | White buttons, amber outline and number | Inside a `WarnWell` |
+
+### `StepperStyle`
+Where a `Stepper` sits, which sets its colours (see above).
 
 ### `TimeField`
 A 24-hour time, picked from an hour and a minute column (5-minute steps),
@@ -187,7 +192,10 @@ The container for a group of related content.
 | Inset | Page background, no border | A summary or result inside a card |
 | Well | Page background, outlined | A nested editing area inside a card |
 | Outline | Outline only | An empty state waiting for content |
-| Ink | Filled ink | The single most important block of a screen; content uses OnInk tones |
+| Ink | Dark in both themes (a softer charcoal in light) | The single most important block of a screen; content uses OnInk tones |
+| InkWell | Raised dark, no border | A group of controls inside an ink card (a custom length) |
+| WarnSurface | White / raised grey, amber outline | A dialog about a temporary state (a pause) |
+| WarnWell | Soft amber, amber outline | An area inside a `WarnSurface` that asks for care (a longer pause) |
 
 `CardPadding`: `None` (rows run edge to edge), `Compact` 16, `Regular` 20,
 `Roomy` 24, `Spacious` 32. Subscribing to `Click` makes the whole card
@@ -217,9 +225,17 @@ A dashed tile inviting to create something new, last in a grid of tiles.
 ### `Chip`
 A short status in a pill, coloured by `Tone`. `SetState(text, tone)` in place.
 
+### `Badge`
+A running total worth noticing, set apart at the top of a dialog ("You've
+paused 20 min today"): a large outlined pill, 32 high, in its tone's soft
+colours. Not a status: statuses are `Chip`s.
+
+### `IconDisc`
+An icon in a soft round disc of its tone, 40 across: what a dialog is about,
+at its top.
+
 ### `Dot`
-A small solid circle marking a state, coloured by `Tone`; `Tone.Ink` is the
-ink-surface foreground.
+A small solid circle marking a state, coloured by `Tone`.
 
 ### `Meter`
 How much of something is used: a thin bar filled to a fraction. `Accent` while
@@ -240,8 +256,7 @@ A clickable literal value offered as an example to try.
 A literal value in a list, removed with its ×. Raises `Removed`.
 
 ### `StatusPanel`
-The overall state of the app at a glance: dot, title, detail. `inverted` (ink)
-for the most serious state.
+The overall state of the app at a glance: dot, title, detail.
 
 ## Maps of time
 
@@ -269,9 +284,13 @@ literal (mono) title. A `muted` tile is plain grey with an outline and not
 clickable: an amount that stands apart from the rest (time not told apart by site).
 
 ### `Overlay`
-A sheet over a dimmed screen: one thing looked at closely, with its actions
-(pass a `Card`). Capped at 680 wide and scrolls when tall. A tap beside the
-sheet or Escape raises `Dismissed`; the screen then rebuilds without it.
+Something over a dimmed screen (pass a `Card`). A tap beside it or Escape
+raises `Dismissed`; the screen then rebuilds without it.
+
+### `OverlayStyle`
+`Sheet`: one thing looked at closely, with its actions, near the top, capped
+at 680 wide and scrolling when tall. `Dialog`: one decision, in the middle of
+the window, as wide as the card makes itself.
 
 ## Navigation and layout
 

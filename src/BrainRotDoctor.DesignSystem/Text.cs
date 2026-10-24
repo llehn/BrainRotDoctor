@@ -180,5 +180,8 @@ public sealed class Icon : Viewbox
         SetTone(tone);
     }
 
-    public void SetTone(TextTone tone) => _path[!Shape.StrokeProperty] = Palette.Dyn(Palette.Of(tone));
+    public void SetTone(TextTone tone) => SetColor(Palette.Of(tone));
+
+    /// <summary>A palette colour no text tone names (an icon on a light control of an ink card).</summary>
+    internal void SetColor(string paletteKey) => _path[!Shape.StrokeProperty] = Palette.Dyn(paletteKey);
 }

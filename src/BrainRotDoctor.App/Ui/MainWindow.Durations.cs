@@ -22,16 +22,14 @@ internal sealed partial class MainWindow
     /// <summary>The pause lengths offered up front, in minutes; a longer one goes a minute at a time.</summary>
     private static readonly int[] BreakMinutes = { 5, 10, 15 };
 
-    /// <summary>A pause of more minutes than this has to be held down to start.</summary>
-    private const int HoldOver = 15;
-
-    private static readonly TimeSpan HoldTime = TimeSpan.FromSeconds(3);
+    /// <summary>A longer pause starts here, at the longest short one.</summary>
+    private const int LongerFrom = 15;
 
     /// <summary>From this many minutes on, a longer pause asks whether it's worth it.</summary>
     private const int WorthItFrom = 30;
 
     /// <summary>Strict mode's choices, by what they are rather than where they sit (the work day comes and goes).</summary>
-    private enum StrictChoice { Tomorrow, WorkDay, FourHours, TwoHours }
+    private enum StrictChoice { Tomorrow, WorkDay, RestOfToday, FourHours, TwoHours }
 
     private readonly CustomLength _strictCustom = new() { Amount = 5 };
 
@@ -43,29 +41,37 @@ internal sealed partial class MainWindow
     private bool _pauseOpen;
     private int _pausePick;
     private bool _pauseCustomOpen;
-    private int _pauseCustomMinutes = HoldOver;
+    private int _pauseCustomMinutes = LongerFrom;
 
     /// <summary>
     /// Strict mode's choices, longest first so the long ones set the scale: until
-    /// tomorrow morning, the rest of the work day (recommended, while there's enough
-    /// of it left), four hours and two. Without a work day left, until tomorrow is
-    /// recommended. Each has its end as seen from <paramref name="now"/>, so the
-    /// choices are worked out again when one is started.
+    /// tomorrow morning, then the rest of the work day (recommended) while at least
+    /// two hours of it are left, else the rest of today (recommended) while at least
+    /// two hours of it are left, then four hours and two. Late at night, until
+    /// tomorrow is recommended. Each has its end as seen from <paramref name="now"/>,
+    /// so the choices are worked out again when one is started.
     /// </summary>
     private static List<(StrictChoice Choice, string Label, string Caption, DateTimeOffset End, bool Recommended)> StrictLengths(DateTimeOffset now)
     {
         DateTime today = now.LocalDateTime.Date;
         DateTimeOffset morning = LocalAt(today.AddDays(1).AddHours(8));
         DateTimeOffset evening = LocalAt(today.AddHours(18));
-        bool workDay = evening - now >= TimeSpan.FromHours(2);
+        DateTimeOffset midnight = LocalAt(today.AddDays(1));
+        TimeSpan enough = TimeSpan.FromHours(2);
+        bool workDay = evening - now >= enough;
+        bool restOfToday = !workDay && midnight - now >= enough;
 
         var lengths = new List<(StrictChoice, string, string, DateTimeOffset, bool)>
         {
-            (StrictChoice.Tomorrow, Loc.T("len_until_tomorrow"), WhenText(morning), morning, !workDay),
+            (StrictChoice.Tomorrow, Loc.T("len_until_tomorrow"), Loc.T("tomorrow_at", Clock(morning)), morning, !workDay && !restOfToday),
         };
         if (workDay)
         {
             lengths.Add((StrictChoice.WorkDay, Loc.T("len_work_day"), Loc.T("until_time", Clock(evening)), evening, true));
+        }
+        else if (restOfToday)
+        {
+            lengths.Add((StrictChoice.RestOfToday, Loc.T("len_today"), Loc.T("until_midnight"), midnight, true));
         }
 
         foreach ((StrictChoice choice, string label, int hours) in new[] { (StrictChoice.FourHours, Loc.T("len_4h"), 4), (StrictChoice.TwoHours, Loc.T("len_2h"), 2) })
@@ -79,33 +85,48 @@ internal sealed partial class MainWindow
     /// <summary>A local wall-clock time with the offset that applies then, not now (clocks change overnight).</summary>
     private static DateTimeOffset LocalAt(DateTime local) => new(local, TimeZoneInfo.Local.GetUtcOffset(local));
 
-    /// <summary>When something ends: the time alone today, with the day otherwise.</summary>
-    private static string EndText(DateTimeOffset end) =>
-        end.LocalDateTime.Date == DateTime.Today ? Clock(end) : WhenText(end);
+    /// <summary>
+    /// When something ends, on a button: the time alone today, with the short day
+    /// name within the week ("Sun 08:00"), and with the date beyond it ("Tue 3 Nov 14:00").
+    /// </summary>
+    private static string EndText(DateTimeOffset end)
+    {
+        DateTime day = end.LocalDateTime.Date;
+        return day == DateTime.Today ? Clock(end)
+            : day < DateTime.Today.AddDays(6) ? end.ToLocalTime().ToString("ddd HH:mm", Loc.Culture)
+            : end.ToLocalTime().ToString("ddd d MMM HH:mm", Loc.Culture);
+    }
 
     /// <summary>
     /// Strict mode while it's off: an ink card asking for a long lock. A long choice
     /// is picked already, so one click on the button locks for long; a custom length
-    /// is hours or days, never minutes.
+    /// is hours or days, never minutes. After the click the card stays as it is for a
+    /// few seconds, the button turned into Cancel right under the pointer; it only
+    /// goes once strict mode is on.
     /// </summary>
     private Control StrictCard()
     {
+        bool starting = _activation is not null;
         string help = Loc.T("strict_pitch_help");
         if (_status.IsPaused)
         {
             help += " " + Loc.T("strict_ends_pause");
         }
 
+        var state = new TextLine(starting ? StartsIn() : Loc.T("strict_off"), TextStyle.Overline, TextTone.OnInkMuted);
         StackPanel head = Layout.Column(6,
-            Layout.Row(Space.S2, new Icon(Glyph.Lock, 14, TextTone.OnInkMuted), new TextLine(Loc.T("strict_off"), TextStyle.Overline, TextTone.OnInkMuted)),
+            Layout.Row(Space.S2, new Icon(Glyph.Lock, 14, TextTone.OnInkAccent), state),
             new TextLine(Loc.T("strict_pitch"), TextStyle.Heading, TextTone.OnInk),
             new TextLine(help, TextStyle.Small, TextTone.OnInkMuted));
 
         var host = new ContentControl();
+        string builtFor = "";
 
         void Build()
         {
-            var lengths = StrictLengths(DateTimeOffset.Now);
+            DateTimeOffset now = DateTimeOffset.Now;
+            builtFor = Clock(now);
+            var lengths = StrictLengths(now);
             if (_strictPick is { } gone && !lengths.Exists(l => l.Choice == gone))
             {
                 _strictPick = null;
@@ -128,57 +149,83 @@ internal sealed partial class MainWindow
             }
 
             // The end as of now: the card may have been built long ago (the window hides to the tray).
-            DateTimeOffset? End(DateTimeOffset now) => _strictCustomOpen
-                ? now + _strictCustom.Length
-                : StrictLengths(now).Where(l => l.Choice == picked && l.End > now).Select(l => (DateTimeOffset?)l.End).FirstOrDefault();
-            string Label() => End(DateTimeOffset.Now) is { } end ? Loc.T("lock_until_btn", WhenText(end)) : "";
+            DateTimeOffset? End(DateTimeOffset at) => _strictCustomOpen
+                ? at + _strictCustom.Length
+                : StrictLengths(at).Where(l => l.Choice == picked && l.End > at).Select(l => (DateTimeOffset?)l.End).FirstOrDefault();
+            string Label() => End(DateTimeOffset.Now) is { } end ? Loc.T("lock_until_btn", EndText(end)) : "";
 
-            // Full width, so it keeps its size whatever the end time says.
-            var go = new PillButton(Label(), ButtonKind.OnInk, Glyph.Lock, ButtonSize.Large) { Stretch = true };
-            go.Click += (_, _) =>
+            // Full width, so it keeps its size whatever the end time says; Cancel takes its place while starting.
+            PillButton go;
+            if (starting)
             {
-                // A choice that has run out (the work day is over) is shown afresh instead of started.
-                if (End(DateTimeOffset.Now) is { } end)
+                go = new PillButton(Loc.T("cancel"), ButtonKind.SecondaryOnInk, size: ButtonSize.Large) { Stretch = true };
+                go.Click += (_, _) => CancelStrict();
+            }
+            else
+            {
+                go = new PillButton(Label(), ButtonKind.OnInk, Glyph.Lock, ButtonSize.Large) { Stretch = true };
+                go.Click += (_, _) =>
                 {
-                    BeginStrict(end);
-                }
-                else
-                {
-                    Build();
-                }
-            };
+                    // A choice that has run out (the work day is over) is shown afresh instead of started.
+                    if (End(DateTimeOffset.Now) is { } end)
+                    {
+                        BeginStrict(end);
+                    }
+                    else
+                    {
+                        Build();
+                    }
+                };
+            }
 
-            var note = new TextLine(Loc.T("change_mind", (int)ActivationDelay.TotalSeconds), TextStyle.Caption, TextTone.OnInkMuted)
+            // While starting, the choices stay where they are but can't be changed.
+            StackPanel choices = Layout.Column(Space.S4, Layout.EqualColumns(Space.S2, tiles));
+            if (_strictCustomOpen)
             {
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            var footer = new DockPanel { LastChildFill = true };
+                choices.Children.Add(StrictCustomRow(() => go.Text = Label(), Build));
+            }
+
+            choices.IsHitTestVisible = !starting;
+            StackPanel body = Layout.Column(Space.S4, choices, go);
             if (!_strictCustomOpen)
             {
-                var another = new PillButton(Loc.T("another_length"), ButtonKind.GhostOnInk, size: ButtonSize.Small);
+                var another = new PillButton(Loc.T("another_length"), ButtonKind.GhostOnInk, size: ButtonSize.Small)
+                {
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Enabled = !starting,
+                };
                 another.Click += (_, _) =>
                 {
                     _strictCustomOpen = true;
                     Build();
                 };
-                DockPanel.SetDock(another, Dock.Right);
-                footer.Children.Add(another);
+                body.Children.Add(another);
             }
 
-            footer.Children.Add(note);
-
-            StackPanel body = Layout.Column(Space.S4, Layout.EqualColumns(Space.S2, tiles));
-            if (_strictCustomOpen)
-            {
-                body.Children.Add(StrictCustomRow(() => go.Text = Label(), Build));
-            }
-
-            body.Children.Add(Layout.Column(Space.S2, go, footer));
             host.Content = body;
         }
 
         Build();
+        _live.Add(_ =>
+        {
+            if (_activation is not null)
+            {
+                state.SetText(StartsIn());
+            }
+            else if (Clock(DateTimeOffset.Now) != builtFor)
+            {
+                // A new minute: every "until" moves on with it.
+                Build();
+            }
+        });
         return new Card(Layout.Column(Space.S5, head, host), CardStyle.Ink, CardPadding.Roomy);
+    }
+
+    /// <summary>"Strict mode starts in 3 s", counting down while it can still be cancelled.</summary>
+    private string StartsIn()
+    {
+        double left = Math.Ceiling((_activationAt - DateTimeOffset.Now).TotalSeconds);
+        return Loc.T("strict_starts_in", (int)Math.Clamp(left, 1, ActivationDelay.TotalSeconds));
     }
 
     /// <summary>A custom strict-mode length: hours (up to a day) or days, with no upper end worth reaching.</summary>
@@ -187,22 +234,23 @@ internal sealed partial class MainWindow
         CustomLength custom = _strictCustom;
         int most = custom.Days ? 999 : 23;
         custom.Amount = Math.Clamp(custom.Amount, 1, most);
+        string unit = custom.Days ? Loc.DayUnit() : Loc.DurationUnits().H;
 
-        var amount = new Stepper(custom.Amount, 1, most, Loc.T("shorter"), Loc.T("longer"));
-        var unit = new Segmented(new Segment[] { new(Loc.T("hours")), new(Loc.T("days")) }, custom.Days ? 1 : 0, stretch: false);
+        var amount = new Stepper(custom.Amount, 1, most, Loc.T("shorter"), Loc.T("longer"), style: StepperStyle.OnInk, format: v => $"{v} {unit}");
+        var units = new Segmented(new Segment[] { new(Loc.T("hours")), new(Loc.T("days")) }, custom.Days ? 1 : 0, stretch: false, onInk: true);
         amount.Changed += value =>
         {
             custom.Amount = value;
             changed();
         };
-        unit.Changed += i =>
+        units.Changed += i =>
         {
             custom.Days = i == 1;
             custom.Amount = custom.Days ? 1 : 5;
             rebuild();
         };
 
-        return Layout.Row(Space.S3, amount, unit);
+        return new Card(Layout.Row(Space.S5, amount, units), CardStyle.InkWell, CardPadding.Compact);
     }
 
     private void OpenPause()
@@ -210,7 +258,7 @@ internal sealed partial class MainWindow
         _pauseOpen = true;
         _pausePick = 0;
         _pauseCustomOpen = false;
-        _pauseCustomMinutes = HoldOver;
+        _pauseCustomMinutes = LongerFrom;
         Rerender();
     }
 
@@ -229,10 +277,10 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// A pause, in a dialog of its own over the screen. It leans short: 5, 10 or 15
-    /// minutes with 5 picked, "Keep blocking" as big as the pause, and today's paused
-    /// time on top. A longer pause goes up one minute per press (down is quick), and
-    /// past 15 minutes the button has to be held down.
+    /// A pause, in a dialog of its own in the middle of the screen. It leans short:
+    /// 5, 10 or 15 minutes with 5 picked, "Keep blocking" as big as the pause, and
+    /// today's paused time on top. A longer pause goes up one minute per press (down
+    /// is quick), and from 30 minutes on it asks whether it's worth it.
     /// </summary>
     private Control PauseSheet()
     {
@@ -241,21 +289,23 @@ internal sealed partial class MainWindow
         if (pausedToday >= TimeSpan.FromMinutes(1))
         {
             string total = pausedToday < TimeSpan.FromHours(1) ? Loc.T("len_n_min", (int)pausedToday.TotalMinutes) : FormatSpan(pausedToday);
-            var chip = new Chip(Loc.T("paused_today_total", total), Tone.Warn);
-            DockPanel.SetDock(chip, Dock.Right);
-            top.Children.Add(chip);
+            var badge = new Badge(Loc.T("paused_today_total", total), Tone.Warn);
+            DockPanel.SetDock(badge, Dock.Right);
+            top.Children.Add(badge);
         }
 
-        top.Children.Add(new Icon(Glyph.Pause, 22, TextTone.Warn) { HorizontalAlignment = HorizontalAlignment.Left });
-        StackPanel head = Layout.Column(Space.S3, top, Layout.Column(Space.S1,
+        top.Children.Add(new IconDisc(Glyph.Pause, Tone.Warn));
+        StackPanel head = Layout.Column(10, top, Layout.Column(Space.S1,
             new TextLine(Loc.T("take_break"), TextStyle.Heading),
             new TextLine(Loc.T("break_help"), TextStyle.Small)));
 
         var host = new ContentControl();
+        string builtFor = "";
 
         void Build()
         {
             DateTimeOffset now = DateTimeOffset.Now;
+            builtFor = Clock(now);
             var tiles = new Control[BreakMinutes.Length];
             for (int i = 0; i < BreakMinutes.Length; i++)
             {
@@ -275,48 +325,38 @@ internal sealed partial class MainWindow
             }
 
             int Minutes() => _pauseCustomOpen ? _pauseCustomMinutes : BreakMinutes[_pausePick];
+            string Label() => Loc.T("pause_until_btn", EndText(DateTimeOffset.Now.AddMinutes(Minutes())));
 
-            // The start button, full width so it keeps its size: held down for a long pause.
-            var action = new ContentControl();
-            void ShowAction()
-            {
-                int minutes = Minutes();
-                string until = EndText(DateTimeOffset.Now.AddMinutes(minutes));
-                if (minutes > HoldOver)
-                {
-                    var hold = new HoldButton(Loc.T("hold_to_pause", until), HoldTime, Glyph.Pause);
-                    hold.Held += (_, _) => StartPause(minutes);
-                    action.Content = hold;
-                }
-                else
-                {
-                    var go = new PillButton(Loc.T("pause_until_btn", until), ButtonKind.Primary, Glyph.Pause, ButtonSize.Large) { Stretch = true };
-                    go.Click += (_, _) => StartPause(minutes);
-                    action.Content = go;
-                }
-            }
+            // Full width, so it keeps its size whatever the end time says.
+            var go = new PillButton(Label(), ButtonKind.Primary, size: ButtonSize.Large) { Stretch = true };
+            go.Click += (_, _) => StartPause(Minutes());
 
             StackPanel body = Layout.Column(Space.S5, Layout.EqualColumns(Space.S2, tiles));
             if (_pauseCustomOpen)
             {
                 int most = (int)PauseState.Longest.TotalMinutes;
-                var note = new TextLine(LongerNote(_pauseCustomMinutes, most), TextStyle.Small, TextTone.Warn);
-                var minutes = new Stepper(_pauseCustomMinutes, 1, most, Loc.T("shorter"), Loc.T("longer"), repeatUp: false);
+                var note = new TextLine("", TextStyle.Small, TextTone.Warn);
+                void Note(int minutes)
+                {
+                    note.SetText(Loc.T("break_worth_it", minutes));
+                    note.IsVisible = minutes >= WorthItFrom;
+                }
+
+                var minutes = new Stepper(_pauseCustomMinutes, 1, most, Loc.T("shorter"), Loc.T("longer"), repeatUp: false,
+                    StepperStyle.Warn, v => Loc.T("len_n_min", v), stretch: true);
                 minutes.Changed += value =>
                 {
                     _pauseCustomMinutes = value;
-                    note.SetText(LongerNote(value, most));
-                    ShowAction();
+                    Note(value);
+                    go.Text = Label();
                 };
-                body.Children.Add(new Card(
-                    Layout.Column(Space.S3, Layout.Row(Space.S3, minutes, new TextLine(Loc.T("minutes"))), note),
-                    CardStyle.Well,
-                    CardPadding.Compact));
+                Note(_pauseCustomMinutes);
+                body.Children.Add(new Card(Layout.Column(10, minutes, note), CardStyle.WarnWell, CardPadding.Compact));
             }
 
             var keep = new PillButton(Loc.T("keep_blocking"), ButtonKind.Secondary, size: ButtonSize.Large) { Stretch = true };
             keep.Click += (_, _) => ClosePause();
-            body.Children.Add(Layout.Column(Space.S2, action, keep));
+            body.Children.Add(Layout.Column(Space.S2, go, keep));
 
             if (!_pauseCustomOpen)
             {
@@ -324,24 +364,24 @@ internal sealed partial class MainWindow
                 longer.Click += (_, _) =>
                 {
                     _pauseCustomOpen = true;
-                    _pauseCustomMinutes = HoldOver;
+                    _pauseCustomMinutes = LongerFrom;
                     Build();
                 };
                 body.Children.Add(longer);
             }
 
-            ShowAction();
             host.Content = body;
         }
 
         Build();
-        return new Card(Layout.Column(Space.S5, head, host), CardStyle.Surface, CardPadding.Roomy) { Width = 440 };
+        _live.Add(_ =>
+        {
+            // A new minute: every "until" moves on with it.
+            if (Clock(DateTimeOffset.Now) != builtFor)
+            {
+                Build();
+            }
+        });
+        return new Card(Layout.Column(Space.S5, head, host), CardStyle.WarnSurface, CardPadding.Roomy) { Width = 440 };
     }
-
-    /// <summary>What a longer pause costs, said more plainly the longer it gets.</summary>
-    private static string LongerNote(int minutes, int most) =>
-        minutes >= most ? Loc.T("pause_max_note", most / 60)
-        : minutes >= WorthItFrom ? Loc.T("break_worth_it", minutes)
-        : minutes > HoldOver ? Loc.T("break_hold_note", HoldOver)
-        : Loc.T("break_one_minute");
 }

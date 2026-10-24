@@ -24,6 +24,15 @@ public enum CardStyle
 
     /// <summary>Filled ink: the single most important block of a screen. Content uses the OnInk tones.</summary>
     Ink,
+
+    /// <summary>A raised area inside an ink card, holding its controls (a custom length).</summary>
+    InkWell,
+
+    /// <summary>White (dark: raised grey) outlined in amber: a dialog about a temporary state.</summary>
+    WarnSurface,
+
+    /// <summary>Soft amber with an amber outline: an area inside a <see cref="WarnSurface"/> that asks for care.</summary>
+    WarnWell,
 }
 
 public enum CardPadding
@@ -68,7 +77,7 @@ public sealed class Card : Border
         });
         CornerRadius = new CornerRadius(style switch
         {
-            CardStyle.Surface => Radius.Card,
+            CardStyle.Surface or CardStyle.WarnSurface => Radius.Card,
             CardStyle.Ink => Radius.Feature,
             _ => Radius.Inset,
         });
@@ -93,7 +102,22 @@ public sealed class Card : Border
                 this[!BorderBrushProperty] = Palette.Dyn(Palette.Border);
                 break;
             case CardStyle.Ink:
-                this[!BackgroundProperty] = Palette.Dyn(Palette.Ink);
+                BorderThickness = new Thickness(1);
+                this[!BackgroundProperty] = Palette.Dyn(Palette.InkCard);
+                this[!BorderBrushProperty] = Palette.Dyn(Palette.InkCardBorder);
+                break;
+            case CardStyle.InkWell:
+                this[!BackgroundProperty] = Palette.Dyn(Palette.InkRaised);
+                break;
+            case CardStyle.WarnSurface:
+                BorderThickness = new Thickness(1);
+                this[!BackgroundProperty] = Palette.Dyn(Palette.Surface);
+                this[!BorderBrushProperty] = Palette.Dyn(Palette.WarnBorder);
+                break;
+            case CardStyle.WarnWell:
+                BorderThickness = new Thickness(1);
+                this[!BackgroundProperty] = Palette.Dyn(Palette.WarnSoft);
+                this[!BorderBrushProperty] = Palette.Dyn(Palette.WarnBorder);
                 break;
         }
     }

@@ -51,7 +51,7 @@ internal sealed partial class MainWindow
     {
         EditableConfiguration.EditableRule rule = _editingRule!;
 
-        var back = new PillButton(_editorReturn == Page.Status ? Loc.T("status") : Loc.T("rules"), ButtonKind.Ghost, Glyph.ArrowLeft);
+        var back = new PillButton(_editorReturn == Page.Status ? Loc.T("today") : Loc.T("rules"), ButtonKind.Ghost, Glyph.ArrowLeft);
         back.Click += (_, _) => Navigate(_editorReturn);
 
         var name = new TextField(rule.Name, Loc.T("rule_name"), TextFieldStyle.Title);
@@ -126,7 +126,13 @@ internal sealed partial class MainWindow
                 rule.AllowanceMinutes = value;
                 _summaryText?.SetText(RuleSummary(rule));
             };
-            limitSection.Children.Add(Layout.Row(Space.S3, minutes, new TextLine(Loc.T("minutes_every_hour"))));
+            // The words wrap beside the stepper rather than run out of the narrow column.
+            var allowance = new DockPanel { LastChildFill = true };
+            minutes.Margin = new Thickness(0, 0, Space.S3, 0);
+            DockPanel.SetDock(minutes, Dock.Left);
+            allowance.Children.Add(minutes);
+            allowance.Children.Add(new TextLine(Loc.T("minutes_every_hour")));
+            limitSection.Children.Add(allowance);
             limitSection.Children.Add(new TextLine(Loc.T("allowance_help"), TextStyle.Small));
         }
 

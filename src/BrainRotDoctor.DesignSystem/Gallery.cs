@@ -79,13 +79,15 @@ public static class Gallery
     private static Control Buttons()
     {
         Control[] kinds = Enum.GetValues<ButtonKind>()
-            .Where(k => k is not (ButtonKind.OnInk or ButtonKind.GhostOnInk))
+            .Where(k => k is not (ButtonKind.OnInk or ButtonKind.SecondaryOnInk or ButtonKind.GhostOnInk))
             .Select(k => Labeled(k.ToString(), new PillButton(k.ToString(), k, k == ButtonKind.Primary ? Glyph.Plus : null))).ToArray();
         var disabled = new PillButton("Disabled", ButtonKind.Primary) { Enabled = false };
-        var onInk = new Card(Layout.Row(Space.S3, new PillButton("OnInk", ButtonKind.OnInk, Glyph.Lock), new PillButton("GhostOnInk", ButtonKind.GhostOnInk, size: ButtonSize.Small)), CardStyle.Ink, CardPadding.Compact);
+        var onInk = new Card(Layout.Row(Space.S3,
+            new PillButton("OnInk", ButtonKind.OnInk, Glyph.Lock),
+            new PillButton("SecondaryOnInk", ButtonKind.SecondaryOnInk),
+            new PillButton("GhostOnInk", ButtonKind.GhostOnInk, size: ButtonSize.Small)), CardStyle.Ink, CardPadding.Compact);
         return Layout.Column(Space.S4,
-            Wrap(Space.S4, kinds.Append(Labeled("OnInk, GhostOnInk", onInk)).ToArray()),
-            Labeled("HoldButton", new HoldButton("Hold to confirm", TimeSpan.FromSeconds(3)) { Width = 320 }),
+            Wrap(Space.S4, kinds.Append(Labeled("OnInk, SecondaryOnInk, GhostOnInk", onInk)).ToArray()),
             Wrap(Space.S4,
                 Labeled("Small", new PillButton("Small", ButtonKind.Accent, size: ButtonSize.Small)),
                 Labeled("Regular", new PillButton("Regular")),
@@ -103,6 +105,7 @@ public static class Gallery
             Wrap(Space.S6,
                 Labeled("Segmented", new Segmented(new Segment[] { new("All day"), new("Set hours") }, 1, stretch: false)),
                 Labeled("Segmented, toned", new Segmented(new Segment[] { new("Block", Tone.Danger), new("Allow", Tone.Accent) }, 0, stretch: false, height: 36)),
+                Labeled("Segmented, on ink", new Card(new Segmented(new Segment[] { new("hours"), new("days") }, 0, stretch: false, onInk: true), CardStyle.Ink, CardPadding.Compact)),
                 Labeled("OnOffSwitch", Layout.Row(Space.S3, new OnOffSwitch(true), new OnOffSwitch(false), disabledSwitch))),
             Wrap(Space.S6,
                 Labeled("RadioPill", Layout.Row(Space.S2, new RadioPill("Only this page", true), new RadioPill("Everything under it", false))),
@@ -128,12 +131,13 @@ public static class Gallery
         Labeled("TextField, title", new TextField("Editable title", style: TextFieldStyle.Title) { Width = 220 }),
         Labeled("Dropdown", new Dropdown(new[] { "Automatic", "English", "Deutsch" }, 1) { MinWidth = 200 }),
         Labeled("Stepper", new Stepper(5, 1, 59, "Fewer", "More")),
-        Labeled("Stepper, slow up", new Stepper(15, 1, 1440, "Fewer", "More", repeatUp: false)),
+        Labeled("Stepper, on ink, with unit", new Card(new Stepper(5, 1, 23, "Shorter", "Longer", style: StepperStyle.OnInk, format: v => v + " h"), CardStyle.InkWell, CardPadding.Compact)),
+        Labeled("Stepper, warn, slow up, stretched", new Card(new Stepper(40, 1, 1440, "Fewer", "More", repeatUp: false, StepperStyle.Warn, v => v + " min", stretch: true), CardStyle.WarnWell, CardPadding.Compact) { Width = 320 }),
         Labeled("TimeField", new TimeField(new TimeOnly(9, 0), "Done") { Width = 140 }));
 
     private static Control Surfaces() => Layout.Column(Space.S4,
         Wrap(Space.S4, Enum.GetValues<CardStyle>().Select(style => (Control)new Card(
-            new TextLine(style.ToString(), TextStyle.Strong, style == CardStyle.Ink ? TextTone.OnInk : TextTone.Primary),
+            new TextLine(style.ToString(), TextStyle.Strong, style is CardStyle.Ink or CardStyle.InkWell ? TextTone.OnInk : TextTone.Primary),
             style) { Width = 180 }).ToArray()),
         new Card(Layout.Column(0,
             new Band(new TextLine("Band"), new Thickness(Space.S5, Space.S3)),
@@ -151,11 +155,12 @@ public static class Gallery
     {
         Tone[] tones = Enum.GetValues<Tone>();
         var status = new StatusPanel { Width = 220 };
-        status.SetState(Tone.Success, "Protected", "2 of 2 rules active", inverted: false);
-        var statusInk = new StatusPanel { Width = 220 };
-        statusInk.SetState(Tone.Ink, "Strict mode", "3 h 59 min left", inverted: true);
+        status.SetState(Tone.Success, "Protected", "2 of 2 rules active");
         return Layout.Column(Space.S4,
             Wrap(Space.S3, tones.Select(t => (Control)new Chip(t.ToString(), t)).ToArray()),
+            Wrap(Space.S4,
+                Labeled("Badge", new Badge("You've paused 20 min today")),
+                Labeled("IconDisc", new IconDisc(Glyph.Pause, Tone.Warn))),
             Wrap(Space.S4, tones.Select(t => (Control)Layout.Row(6, new Dot(t), new TextLine(t.ToString(), TextStyle.Caption))).ToArray()),
             Wrap(Space.S6,
                 Labeled("Meter", new Meter(0.6, Tone.Accent) { Width = 220 }),
@@ -166,7 +171,7 @@ public static class Gallery
                 Labeled("InfoChip", new InfoChip(new Monogram("Ab", Swatch.Neutral, 18), "Label", "detail")),
                 Labeled("SuggestionChip", new SuggestionChip("example.com/page/")),
                 Labeled("RemovableChip", new RemovableChip("key = value", "Remove")),
-                Labeled("StatusPanel", Layout.Row(Space.S3, status, statusInk))));
+                Labeled("StatusPanel", status)));
     }
 
     private static Control Maps()
@@ -188,6 +193,10 @@ public static class Gallery
                 .Append(Labeled("Overlay", new Overlay(
                     new Card(new TextLine("The screen behind"), CardStyle.Surface, CardPadding.Roomy),
                     new Card(new TextLine("Sheet", TextStyle.Strong), CardStyle.Surface, CardPadding.Roomy)) { Width = 320, Height = 200 }))
+                .Append(Labeled("Overlay, dialog", new Overlay(
+                    new Card(new TextLine("The screen behind"), CardStyle.Surface, CardPadding.Roomy),
+                    new Card(new TextLine("Dialog", TextStyle.Strong), CardStyle.WarnSurface, CardPadding.Roomy),
+                    OverlayStyle.Dialog) { Width = 320, Height = 200 }))
                 .ToArray()),
             Labeled("TileMap of MapTiles, one with nested tiles", map));
     }

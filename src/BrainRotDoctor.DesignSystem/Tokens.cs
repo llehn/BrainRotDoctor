@@ -41,11 +41,17 @@ public enum TextTone
     Warn,
     Success,
 
-    /// <summary>Text on an ink surface (ink cards, filled tiles).</summary>
+    /// <summary>Text on an ink card.</summary>
     OnInk,
 
-    /// <summary>Supporting text on an ink surface.</summary>
+    /// <summary>Supporting text on an ink card.</summary>
     OnInkMuted,
+
+    /// <summary>A coloured mark on an ink card (the lock in its heading).</summary>
+    OnInkAccent,
+
+    /// <summary>Text on a control filled with ink: a primary button, a picked day.</summary>
+    Inverse,
 }
 
 /// <summary>The type scale. Each style fixes size, weight and default colour.</summary>
@@ -108,7 +114,8 @@ public static class Space
 /// <summary>Font families.</summary>
 public static class Fonts
 {
-    public const string Sans = "Inter, $Default";
+    /// <summary>Inter, shipped with the app (Avalonia.Fonts.Inter), so every PC shows the same type.</summary>
+    public const string Sans = "fonts:Inter#Inter, $Default";
     public const string Mono = "Cascadia Mono, Consolas, Courier New, monospace";
 }
 
@@ -132,8 +139,20 @@ internal static class Palette
     public const string TextTertiary = "Ds.TextTertiary";
     public const string Ink = "Ds.Ink";
     public const string InkText = "Ds.InkText";
-    public const string InkTextMuted = "Ds.InkTextMuted";
+
+    // The ink card and what sits on it: dark in both themes, a softer charcoal in light.
+    public const string InkCard = "Ds.InkCard";
+    public const string InkCardBorder = "Ds.InkCardBorder";
+    public const string InkCardText = "Ds.InkCardText";
+    public const string InkCardTextMuted = "Ds.InkCardTextMuted";
+    public const string InkAccent = "Ds.InkAccent";
+    public const string InkRaised = "Ds.InkRaised";
+    public const string InkRaisedBorder = "Ds.InkRaisedBorder";
+    public const string InkLine = "Ds.InkLine";
     public const string InkTrack = "Ds.InkTrack";
+    public const string InkPick = "Ds.InkPick";
+    public const string InkPickText = "Ds.InkPickText";
+    public const string InkPickMuted = "Ds.InkPickMuted";
     public const string Accent = "Ds.Accent";
     public const string AccentText = "Ds.AccentText";
     public const string AccentSoft = "Ds.AccentSoft";
@@ -171,8 +190,18 @@ internal static class Palette
         (TextTertiary, "#6B6E76", "#8E9098"),
         (Ink, "#16171B", "#ECECEE"),
         (InkText, "#FFFFFF", "#16171B"),
-        (InkTextMuted, "#C5C5C6", "#4C4D50"),
-        (InkTrack, "#333436", "#CFCFD1"),
+        (InkCard, "#33353C", "#0E0F12"),
+        (InkCardBorder, "#33353C", "#2C2D33"),
+        (InkCardText, "#FFFFFF", "#ECECEE"),
+        (InkCardTextMuted, "#CDCFD4", "#B4B6BD"),
+        (InkAccent, "#5FD0C0", "#3DBBA9"),
+        (InkRaised, "#3E4148", "#1C1D22"),
+        (InkRaisedBorder, "#50535C", "#383A41"),
+        (InkLine, "#6A6D76", "#4A4C54"),
+        (InkTrack, "#50535C", "#2C2D33"),
+        (InkPick, "#FFFFFF", "#ECECEE"),
+        (InkPickText, "#16171B", "#16171B"),
+        (InkPickMuted, "#4F525A", "#4F525A"),
         (Accent, "#0B6B63", "#2A9D8F"),
         (AccentText, "#FFFFFF", "#FFFFFF"),
         (AccentSoft, "#E1F0EE", "#173A36"),
@@ -228,8 +257,10 @@ internal static class Palette
         TextTone.Danger => Danger,
         TextTone.Warn => WarnText,
         TextTone.Success => Success,
-        TextTone.OnInk => InkText,
-        TextTone.OnInkMuted => InkTextMuted,
+        TextTone.OnInk => InkCardText,
+        TextTone.OnInkMuted => InkCardTextMuted,
+        TextTone.OnInkAccent => InkAccent,
+        TextTone.Inverse => InkText,
         _ => TextPrimary,
     };
 
@@ -251,7 +282,7 @@ internal static class Palette
         Tone.Danger => Danger,
         Tone.Warn => Warn,
         Tone.Success => Success,
-        Tone.Ink => InkText,
+        Tone.Ink => Ink,
         _ => TextTertiary,
     };
 }

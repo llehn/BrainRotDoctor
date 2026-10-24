@@ -50,7 +50,7 @@ Firefox, Chrome, and Edge. A blocked tab does not vanish without warning: a shor
 animated scene plays in the screen corner (a doctor pulls a worm out of a brain)
 and the tab closes the moment the worm pops out, about three seconds in (ADR-012).
 
-The app opens on a **Status** view: a mirror of today, not a verdict. Every site
+The app opens on **Today**: a mirror of today, not a verdict. Every site
 and every app is a tile whose size is its share of today's time, filling the window
 without scrolling; under each name, clock faces show the time itself (one per
 hour, the last one filling, stronger the more there is), with the exact time
@@ -77,23 +77,31 @@ Sites are split where the time goes (a section with at least a quarter of its
 parent's time and two minutes gets its own part).
 
 **Strict mode is a flag**: on until a time, knowing nothing about rules. While
-it is off, Status and the Strict mode screen show the same dark card that
-**leans long**: the longest choice first (until tomorrow 08:00), the rest of
-the work day (until 18:00, while at least two hours of it are left) picked
-already and marked Recommended, then 4 and 2 hours; another length is hours or
-days, never minutes. One click on the button locks, with three seconds to
-cancel a slip. While it is on, the rules side only accepts changes that make
+it is off, Today and the Strict mode screen show the same dark card (dark in
+both themes) that **leans long**: the longest choice first (until tomorrow
+08:00), then the rest of the work day (until 18:00) while at least two hours of
+it are left, else the rest of today (until midnight) while at least two hours
+of that are left, picked already and marked Recommended, then 4 and 2 hours;
+late at night until tomorrow is the recommended one. Another length is hours
+or days, never minutes. One click on the button locks after three seconds: the
+card stays as it is, the button turns into Cancel under the pointer and the
+heading counts down; the card only goes once strict mode is on. Every "until"
+on the card moves on with the clock. While it is on, the rules side only accepts changes that make
 blocking stricter: adding a rule and switching a rule on work; changing,
 switching off or deleting one doesn't (`RuleGuard`). The rules as last
 accepted are kept apart, so a hand edit of the config file during strict mode
 is undone at the next start.
 
-**A pause leans short**, in a dialog of its own: 5, 10 or 15 minutes with 5
-picked, "Keep blocking" as big as the pause button, and how long blocking was
-already paused today on top. A longer pause goes up one minute per press
-(down is quick, holding repeats), and past 15 minutes its button has to be
-held for three seconds; from 30 minutes on it asks whether it's worth it.
-Every pause ends by itself, after at most 24 hours.
+**A pause leans short**, in a dialog of its own in the middle of the window: 5,
+10 or 15 minutes with 5 picked, "Keep blocking" as big as the pause button, and
+how long blocking was already paused today on top (sleep during a pause
+counts). A longer pause starts at 15 minutes and goes up one minute per press
+(down is quick, holding repeats); from 30 minutes on it asks whether it's worth
+it. One click starts any pause. Every pause ends by itself, after at most 24
+hours.
+
+No text in the app explains how a button works: a button that needs one is
+changed instead.
 
 The app starts with paired primary/watchdog roles by default. If either role is
 killed, the other restarts it. If either role is frozen, the other wakes it.
@@ -227,6 +235,16 @@ at startup, persists to the active config file, reloads enforcement, and returns
 to the grid; Cancel discards. While strict mode is active, existing rules can't
 be opened for editing; a rule that's off can still be switched on, and new
 rules can be added.
+
+### Designing changes
+
+- **Designs are static.** Nothing in a design hides behind a click, a press or
+  a playing animation. Whatever changes over time or after an action is drawn
+  as its own screen, side by side, so every state is visible at once. A
+  working, clickable prototype only when that is agreed on.
+- **Everything new is named.** When a design adds anything that wasn't asked
+  for — a behavior, a control, a rule — it is said out loud when the design is
+  shown. Nothing goes in quietly.
 
 ## Architecture Decision Records
 

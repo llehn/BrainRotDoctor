@@ -104,35 +104,66 @@ public sealed class Dropdown : ComboBox
     protected override Type StyleKeyOverride => typeof(ComboBox);
 }
 
+/// <summary>Where a <see cref="Stepper"/> sits, which sets its colours.</summary>
+public enum StepperStyle
+{
+    /// <summary>On a surface: white buttons, grey outline.</summary>
+    Default,
+
+    /// <summary>On an ink card: see-through buttons with a light outline.</summary>
+    OnInk,
+
+    /// <summary>In a <see cref="CardStyle.WarnWell"/>: white buttons, amber outline and number.</summary>
+    Warn,
+}
+
 /// <summary>
-/// A whole number changed with − and + only, never typed. Holding a button
-/// repeats, and speeds up for long ranges. With <c>repeatUp: false</c>, + only
-/// takes one step per press, so raising the number is slow on purpose.
+/// A whole number changed with − and + only, never typed: two square buttons with
+/// the number between them. Holding a button repeats, and speeds up for long
+/// ranges. With <c>repeatUp: false</c>, + only takes one step per press, so
+/// raising the number is slow on purpose. <c>format</c> adds the unit ("5 h");
+/// <c>stretch</c> lets the number take the width between the buttons.
 /// </summary>
-public sealed class Stepper : Border
+public sealed class Stepper : Grid
 {
     private readonly int _min;
     private readonly int _max;
     private readonly bool _repeatUp;
+    private readonly StepperStyle _style;
+    private readonly Func<int, string> _format;
     private readonly TextLine _value;
     private readonly DispatcherTimer _repeat = new();
     private int _delta;
     private int _repeats;
 
-    public Stepper(int value, int min, int max, string fewerTip, string moreTip, bool repeatUp = true)
+    public Stepper(int value, int min, int max, string fewerTip, string moreTip, bool repeatUp = true,
+        StepperStyle style = StepperStyle.Default, Func<int, string>? format = null, bool stretch = false)
     {
         _min = min;
         _max = max;
         _repeatUp = repeatUp;
+        _style = style;
+        _format = format ?? (v => v.ToString(CultureInfo.CurrentCulture));
         Value = Math.Clamp(value, min, max);
-        _value = new TextLine(Format(Value), TextStyle.Subheading) { FontSize = 18, Centered = true, MinWidth = 44 };
+        _value = new TextLine(_format(Value), TextStyle.Subheading)
+        {
+            FontSize = style == StepperStyle.Warn ? 22 : 18,
+            Centered = true,
+            MinWidth = 72,
+            Margin = new Thickness(Space.S3, 0),
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        _value.SetTone(style switch { StepperStyle.OnInk => TextTone.OnInk, StepperStyle.Warn => TextTone.Warn, _ => TextTone.Primary });
 
-        CornerRadius = new CornerRadius(Radius.Control);
-        BorderThickness = new Thickness(1);
-        HorizontalAlignment = HorizontalAlignment.Left;
-        this[!BorderBrushProperty] = Palette.Dyn(Palette.BorderStrong);
-        this[!BackgroundProperty] = Palette.Dyn(Palette.Surface);
-        Child = Layout.Row(0, Step(Glyph.Minus, -1, fewerTip), _value, Step(Glyph.Plus, 1, moreTip));
+        ColumnDefinitions = new ColumnDefinitions(stretch ? "Auto,*,Auto" : "Auto,Auto,Auto");
+        HorizontalAlignment = stretch ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+        Border fewer = Step(Glyph.Minus, -1, fewerTip);
+        Border more = Step(Glyph.Plus, 1, moreTip);
+        SetColumn(_value, 1);
+        SetColumn(more, 2);
+        Children.Add(fewer);
+        Children.Add(_value);
+        Children.Add(more);
 
         _repeat.Tick += (_, _) =>
         {
@@ -147,18 +178,36 @@ public sealed class Stepper : Border
 
     public int Value { get; private set; }
 
-    private static string Format(int v) => v.ToString(CultureInfo.CurrentCulture);
-
     private Border Step(string glyph, int delta, string tip)
     {
+        var icon = new Icon(glyph, 16, _style switch { StepperStyle.OnInk => TextTone.OnInk, StepperStyle.Warn => TextTone.Warn, _ => TextTone.Primary })
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
         var b = new Border
         {
             Width = 44,
-            Height = 42,
+            Height = 44,
+            CornerRadius = new CornerRadius(Radius.Control),
+            BorderThickness = new Thickness(1),
             Background = Brushes.Transparent,
             Cursor = new Cursor(StandardCursorType.Hand),
-            Child = new Icon(glyph, 16) { HorizontalAlignment = HorizontalAlignment.Center },
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = icon,
         };
+        if (_style != StepperStyle.OnInk)
+        {
+            b[!Border.BackgroundProperty] = Palette.Dyn(Palette.Surface);
+        }
+
+        b[!Border.BorderBrushProperty] = Palette.Dyn(_style switch
+        {
+            StepperStyle.OnInk => Palette.InkLine,
+            StepperStyle.Warn => Palette.WarnBorder,
+            _ => Palette.BorderStrong,
+        });
+        b.PointerEntered += (_, _) => b.Opacity = 0.82;
+        b.PointerExited += (_, _) => b.Opacity = 1;
         ToolTip.SetTip(b, tip);
         b.PointerPressed += (_, e) =>
         {
@@ -187,7 +236,7 @@ public sealed class Stepper : Border
         }
 
         Value = next;
-        _value.SetText(Format(next));
+        _value.SetText(_format(next));
         Changed?.Invoke(next);
     }
 }
@@ -293,7 +342,7 @@ public sealed class TimeField : Border
                     cell.Background = Brushes.Transparent;
                 }
 
-                label.SetTone(on ? TextTone.OnInk : TextTone.Primary);
+                label.SetTone(on ? TextTone.Inverse : TextTone.Primary);
             }
         }
 

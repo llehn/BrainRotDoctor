@@ -313,28 +313,54 @@ public sealed class MapTile : Border
     }
 }
 
+/// <summary>How an <see cref="Overlay"/> places what it shows.</summary>
+public enum OverlayStyle
+{
+    /// <summary>A sheet near the top, up to 680 wide: one thing looked at closely, with its actions.</summary>
+    Sheet,
+
+    /// <summary>A dialog in the middle of the window, as wide as it makes itself: one decision.</summary>
+    Dialog,
+}
+
 /// <summary>
-/// A sheet over a dimmed screen: one thing looked at closely, with its actions.
-/// A tap beside the sheet or Escape raises <see cref="Dismissed"/>.
+/// A sheet or a dialog over a dimmed screen.
+/// A tap beside it or Escape raises <see cref="Dismissed"/>.
 /// </summary>
 public sealed class Overlay : Grid
 {
-    public Overlay(Control behind, Control sheet)
+    public Overlay(Control behind, Control sheet, OverlayStyle style = OverlayStyle.Sheet)
     {
         Children.Add(behind);
         Children.Add(new Border { [!Border.BackgroundProperty] = Palette.Dyn(Palette.Scrim) });
 
-        sheet.MaxWidth = 680;
         sheet.HorizontalAlignment = HorizontalAlignment.Center;
-        sheet.VerticalAlignment = VerticalAlignment.Top;
-        sheet.Margin = new Thickness(Space.S6, 56, Space.S6, Space.S10);
-        var scroll = new ScrollViewer
+        if (style == OverlayStyle.Dialog)
         {
-            Content = sheet,
+            sheet.VerticalAlignment = VerticalAlignment.Center;
+            sheet.Margin = new Thickness(Space.S6);
+        }
+        else
+        {
+            sheet.MaxWidth = 680;
+            sheet.VerticalAlignment = VerticalAlignment.Top;
+            sheet.Margin = new Thickness(Space.S6, 56, Space.S6, Space.S10);
+        }
+
+        // Both scroll when taller than the window; a dialog that fits stays in the middle.
+        var page = new Grid { Children = { sheet } };
+        var holder = new ScrollViewer
+        {
+            Content = page,
             Background = Brushes.Transparent,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         };
-        scroll.AddHandler(Gestures.TappedEvent, (_, e) =>
+        if (style == OverlayStyle.Dialog)
+        {
+            holder.SizeChanged += (_, e) => page.MinHeight = e.NewSize.Height;
+        }
+
+        holder.AddHandler(Gestures.TappedEvent, (_, e) =>
         {
             if (e.Source is Visual v && (v == sheet || sheet.IsVisualAncestorOf(v)))
             {
@@ -343,7 +369,7 @@ public sealed class Overlay : Grid
 
             Dismissed?.Invoke(this, EventArgs.Empty);
         });
-        Children.Add(scroll);
+        Children.Add(holder);
 
         Focusable = true;
         AttachedToVisualTree += (_, _) => Focus();

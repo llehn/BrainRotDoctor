@@ -130,6 +130,19 @@ public class ActivityTests
         Assert.Equal(0, tally.Snapshot().PausedSeconds, 3);
     }
 
+    [Fact]
+    public void A_pause_counts_in_full_while_the_pc_sleeps_but_browsing_does_not()
+    {
+        var tally = new ActivityTally();
+        var page = new Uri("https://x.com/home");
+        tally.Tick(page, T0);
+        tally.Tick(page, T0.AddMinutes(20));
+        tally.MarkPaused(T0.AddMinutes(20));
+
+        Assert.Equal(20 * 60, tally.Snapshot().PausedSeconds, 3);
+        Assert.Equal(ActivityTally.MaxGap.TotalSeconds, tally.Snapshot().Places["x.com"].Seconds, 3);
+    }
+
     // ---------- Report ----------
 
     private static ActivityRecord Record(params (string Key, double Minutes, int Visits)[] places) => new()

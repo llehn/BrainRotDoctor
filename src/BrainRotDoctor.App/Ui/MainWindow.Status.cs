@@ -31,6 +31,7 @@ internal sealed partial class MainWindow
     private string? _justUntracked;
     private (string Key, string Name)? _justUntrackedApp;
     private DispatcherTimer? _activation;
+    private DateTimeOffset _activationAt;
 
     // Blocks made from the status view in this session, by the place they block: the rule
     // and how it was before (null for a rule made new). Undoable until strict mode.
@@ -41,7 +42,7 @@ internal sealed partial class MainWindow
         Control screen = WithSidebar(BuildStatusPage(), scrolls: false);
         if (_pauseOpen && !_status.IsPaused && !_status.StrictMode.IsActive)
         {
-            var dialog = new Overlay(screen, PauseSheet());
+            var dialog = new Overlay(screen, PauseSheet(), OverlayStyle.Dialog);
             dialog.Dismissed += (_, _) => ClosePause();
             return dialog;
         }
@@ -160,7 +161,7 @@ internal sealed partial class MainWindow
 
     // ----- Strict mode -----
 
-    /// <summary>Off: an ink card asking for a long lock. Activating: a moment to cancel. On: calm.</summary>
+    /// <summary>Off, and the moment to cancel after the click: an ink card asking for a long lock. On: calm.</summary>
     private Control StrictBar()
     {
         if (_status.StrictMode.IsActive)
@@ -178,19 +179,13 @@ internal sealed partial class MainWindow
             return new Banner(Tone.Accent, Glyph.Lock, message);
         }
 
-        if (_activation is not null)
-        {
-            var cancel = new PillButton(Loc.T("cancel"), ButtonKind.Ghost, size: ButtonSize.Small);
-            cancel.Click += (_, _) => CancelStrict();
-            return new Banner(Tone.Accent, Glyph.Lock, Banner.Message(Tone.Accent, new Phrase(Loc.T("strict_activating"), Strong: true)), cancel);
-        }
-
         return StrictCard();
     }
 
     private void BeginStrict(DateTimeOffset end)
     {
         CancelStrict();
+        _activationAt = DateTimeOffset.Now + ActivationDelay;
         _activation = new DispatcherTimer { Interval = ActivationDelay };
         _activation.Tick += (_, _) =>
         {

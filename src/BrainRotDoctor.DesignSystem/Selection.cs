@@ -14,18 +14,21 @@ public readonly record struct Segment(string Text, Tone? Fill = null);
 /// <summary>
 /// A row of mutually exclusive options on a grey track; the selected option is
 /// raised, or filled with its tone (e.g. danger for Block, accent for Allow).
+/// <c>onInk</c> draws it for an ink card: a dark track, the selected option light.
 /// </summary>
 public sealed class Segmented : Border
 {
     private readonly List<(Border Cell, TextLine Label, Tone? Fill)> _cells = new();
+    private readonly bool _onInk;
     private int _selected;
 
-    public Segmented(IReadOnlyList<Segment> options, int selected, bool stretch = true, double height = 38)
+    public Segmented(IReadOnlyList<Segment> options, int selected, bool stretch = true, double height = 38, bool onInk = false)
     {
         _selected = selected;
+        _onInk = onInk;
         Padding = new Thickness(3);
         CornerRadius = new CornerRadius(Radius.Control);
-        this[!BackgroundProperty] = Palette.Dyn(Palette.Track);
+        this[!BackgroundProperty] = Palette.Dyn(onInk ? Palette.InkTrack : Palette.Track);
 
         var grid = new Grid();
         for (int i = 0; i < options.Count; i++)
@@ -87,7 +90,13 @@ public sealed class Segmented : Border
             {
                 cell.Background = Brushes.Transparent;
                 cell.BoxShadow = default;
-                label.SetTone(TextTone.Secondary);
+                label.SetTone(_onInk ? TextTone.OnInkMuted : TextTone.Secondary);
+            }
+            else if (_onInk)
+            {
+                cell[!BackgroundProperty] = Palette.Dyn(Palette.InkPick);
+                cell.BoxShadow = default;
+                label[!TextBlock.ForegroundProperty] = Palette.Dyn(Palette.InkPickText);
             }
             else if (fill is { } tone)
             {
@@ -207,7 +216,7 @@ public sealed class RoundToggle : Border
         CornerRadius = new CornerRadius(18);
         BorderThickness = new Thickness(1);
         Cursor = new Cursor(StandardCursorType.Hand);
-        Child = new TextLine(label, TextStyle.CaptionStrong, on ? TextTone.OnInk : TextTone.Secondary) { Centered = true };
+        Child = new TextLine(label, TextStyle.CaptionStrong, on ? TextTone.Inverse : TextTone.Secondary) { Centered = true };
         this[!BackgroundProperty] = Palette.Dyn(on ? Palette.Ink : Palette.Surface);
         this[!BorderBrushProperty] = Palette.Dyn(on ? Palette.Ink : Palette.BorderStrong);
         ToolTip.SetTip(this, tip);
@@ -293,7 +302,7 @@ public enum ChoiceTileStyle
     /// <summary>On a surface: the selected tile is filled ink.</summary>
     Default,
 
-    /// <summary>On an ink card: dark tiles, the selected one in the surface colour. Taller, text at the bottom.</summary>
+    /// <summary>On an ink card: raised, outlined dark tiles, the selected one light. Taller, text at the bottom.</summary>
     OnInk,
 
     /// <summary>On a surface, choosing a temporary state: the selected tile is soft amber.</summary>
@@ -306,13 +315,13 @@ public sealed class ChoiceTile : Border
     public ChoiceTile(string title, string caption, bool selected, ChoiceTileStyle style = ChoiceTileStyle.Default, string? badge = null)
     {
         bool onInk = style == ChoiceTileStyle.OnInk;
-        (string surface, string outline, TextTone titleTone, TextTone captionTone) = (style, selected) switch
+        (string surface, string outline, string titleColor, string captionColor) = (style, selected) switch
         {
-            (ChoiceTileStyle.OnInk, true) => (Palette.Surface, Palette.Surface, TextTone.Primary, TextTone.Secondary),
-            (ChoiceTileStyle.OnInk, false) => (Palette.InkTrack, Palette.InkTrack, TextTone.OnInk, TextTone.OnInkMuted),
-            (ChoiceTileStyle.Warn, true) => (Palette.WarnSoft, Palette.Warn, TextTone.Warn, TextTone.Warn),
-            (_, true) => (Palette.Ink, Palette.Ink, TextTone.OnInk, TextTone.OnInk),
-            _ => (Palette.Surface, Palette.Border, TextTone.Primary, TextTone.Tertiary),
+            (ChoiceTileStyle.OnInk, true) => (Palette.InkPick, Palette.InkPick, Palette.InkPickText, Palette.InkPickMuted),
+            (ChoiceTileStyle.OnInk, false) => (Palette.InkRaised, Palette.InkRaisedBorder, Palette.Of(TextTone.OnInk), Palette.Of(TextTone.OnInkMuted)),
+            (ChoiceTileStyle.Warn, true) => (Palette.WarnSoft, Palette.Warn, Palette.Of(TextTone.Warn), Palette.Of(TextTone.Warn)),
+            (_, true) => (Palette.Ink, Palette.Ink, Palette.Of(TextTone.Inverse), Palette.Of(TextTone.Inverse)),
+            _ => (Palette.Surface, Palette.Border, Palette.Of(TextTone.Primary), Palette.Of(TextTone.Tertiary)),
         };
 
         MinHeight = onInk ? 104 : 64;
@@ -320,9 +329,9 @@ public sealed class ChoiceTile : Border
         CornerRadius = new CornerRadius(Radius.Inset);
         BorderThickness = new Thickness(1.5);
         Cursor = new Cursor(StandardCursorType.Hand);
-        var text = Layout.Column(2,
-            new TextLine(title, TextStyle.Label, titleTone),
-            new TextLine(caption, TextStyle.Caption, captionTone) { FontSize = 12 });
+        var titleLine = new TextLine(title, TextStyle.Label) { [!TextBlock.ForegroundProperty] = Palette.Dyn(titleColor) };
+        var captionLine = new TextLine(caption, TextStyle.Caption) { FontSize = 12, [!TextBlock.ForegroundProperty] = Palette.Dyn(captionColor) };
+        var text = Layout.Column(2, titleLine, captionLine);
         text.VerticalAlignment = onInk ? VerticalAlignment.Bottom : VerticalAlignment.Center;
         var content = new DockPanel { LastChildFill = true };
         if (badge is not null)
@@ -363,7 +372,7 @@ public sealed class PickTile : Border
             BorderThickness = new Thickness(1.5),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
-            Child = on ? new Icon(Glyph.Check, 13, TextTone.OnInk, 3) { HorizontalAlignment = HorizontalAlignment.Center } : null,
+            Child = on ? new Icon(Glyph.Check, 13, TextTone.Inverse, 3) { HorizontalAlignment = HorizontalAlignment.Center } : null,
             [!BackgroundProperty] = Palette.Dyn(on ? (locked ? Palette.TextTertiary : Palette.Ink) : Palette.Surface),
             [!BorderBrushProperty] = Palette.Dyn(on ? (locked ? Palette.TextTertiary : Palette.Ink) : Palette.BorderStrong),
         };

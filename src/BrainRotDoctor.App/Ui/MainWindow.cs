@@ -65,6 +65,12 @@ internal sealed partial class MainWindow : AppWindow
 
     public void ShowFromTray()
     {
+        // Times on screen ("until 18:00") were worked out when it was built, maybe hours ago.
+        if (_page is not (Page.Editor or Page.AddSites))
+        {
+            Rerender();
+        }
+
         Show();
         WindowState = WindowState.Normal;
         Activate();
@@ -150,7 +156,7 @@ internal sealed partial class MainWindow : AppWindow
     {
         var nav = new StackPanel { Spacing = Space.S1 };
         nav.Children.Add(Brand());
-        nav.Children.Add(NavTo(Glyph.Pulse, Loc.T("status"), Page.Status, badge: null));
+        nav.Children.Add(NavTo(Glyph.Clock, Loc.T("today"), Page.Status, badge: null));
         nav.Children.Add(NavTo(Glyph.List, Loc.T("rules"), Page.Home, badge: null));
         nav.Children.Add(NavTo(Glyph.Lock, Loc.T("strict_mode"), Page.Strict, badge: _status.StrictMode.IsActive ? Loc.T("on_badge") : null));
         nav.Children.Add(NavTo(Glyph.Gear, Loc.T("settings"), Page.Settings, badge: null));
@@ -181,20 +187,20 @@ internal sealed partial class MainWindow : AppWindow
             if (status.StrictMode.IsActive)
             {
                 // Strict mode on is the good state: calm, nothing to do.
-                panel.SetState(Tone.Accent, Loc.T("strict_mode"), Loc.T("time_left", FormatSpan(status.StrictMode.Remaining)), inverted: false);
+                panel.SetState(Tone.Accent, Loc.T("strict_mode"), Loc.T("time_left", FormatSpan(status.StrictMode.Remaining)));
             }
             else if (status.Pause is { } pause)
             {
-                panel.SetState(Tone.Warn, Loc.T("paused"), PauseUntilText(pause), inverted: false);
+                panel.SetState(Tone.Warn, Loc.T("paused"), PauseUntilText(pause));
             }
             else if (status.LastError is not null)
             {
-                panel.SetState(Tone.Warn, Loc.T("attention"), status.LastError, inverted: false);
+                panel.SetState(Tone.Warn, Loc.T("attention"), status.LastError);
             }
             else
             {
                 int active = status.Rules.Count(r => r.IsActive);
-                panel.SetState(Tone.Success, Loc.T("protected"), Loc.T("rules_active_now", active, status.Rules.Count), inverted: false);
+                panel.SetState(Tone.Success, Loc.T("protected"), Loc.T("rules_active_now", active, status.Rules.Count));
             }
         });
 

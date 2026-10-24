@@ -154,6 +154,26 @@ internal static class Loc
         _ => ("h", "min", "s"),
     };
 
+    /// <summary>The compact day unit for the active language ("5 d"), the day's counterpart of <see cref="DurationUnits"/>.</summary>
+    public static string DayUnit() => _code switch
+    {
+        "de" => "T",
+        "fr" => "j",
+        "it" => "g",
+        "ro" => "z",
+        "hu" => "nap",
+        "el" => "ημ.",
+        "ru" or "uk" or "bg" or "sr" => "д",
+        "lt" or "lv" => "d.",
+        "fi" => "pv",
+        "et" => "p",
+        "ga" => "l",
+        "mt" => "j",
+        "tr" => "g",
+        // en, es, pt, nl, pl, sv, da, nb, cs, sk, sl, hr, bs, ca
+        _ => "d",
+    };
+
     private static void Resolve(string preference)
     {
         string code = string.Equals(preference, Auto, StringComparison.OrdinalIgnoreCase)

@@ -31,7 +31,47 @@ public sealed class Chip : Border
     }
 }
 
-/// <summary>A small solid circle marking a state. <see cref="Tone.Ink"/> is for use on ink surfaces.</summary>
+/// <summary>
+/// A running total worth noticing, set apart at the top of a dialog (how long
+/// blocking was paused today): a large outlined pill in its tone's soft colours.
+/// </summary>
+public sealed class Badge : Border
+{
+    public Badge(string text, Tone tone = Tone.Warn)
+    {
+        (string surface, string fg) = Palette.Soft(tone);
+        var label = new TextLine(text, TextStyle.Strong) { TextWrapping = TextWrapping.NoWrap };
+        label[!TextBlock.ForegroundProperty] = Palette.Dyn(fg);
+        Child = label;
+        Height = 32;
+        Padding = new Thickness(14, 0);
+        CornerRadius = new CornerRadius(16);
+        BorderThickness = new Thickness(1);
+        VerticalAlignment = VerticalAlignment.Center;
+        HorizontalAlignment = HorizontalAlignment.Left;
+        this[!BackgroundProperty] = Palette.Dyn(surface);
+        this[!BorderBrushProperty] = Palette.Dyn(tone == Tone.Warn ? Palette.WarnBorder : surface);
+    }
+}
+
+/// <summary>An icon in a soft round disc of its tone: what a dialog is about, at its top.</summary>
+public sealed class IconDisc : Border
+{
+    public IconDisc(string glyph, Tone tone)
+    {
+        var icon = new Icon(glyph, 18) { HorizontalAlignment = HorizontalAlignment.Center };
+        icon.SetColor(Palette.Solid(tone));
+        Child = icon;
+        Width = 40;
+        Height = 40;
+        CornerRadius = new CornerRadius(20);
+        VerticalAlignment = VerticalAlignment.Center;
+        HorizontalAlignment = HorizontalAlignment.Left;
+        this[!BackgroundProperty] = Palette.Dyn(Palette.Soft(tone).Surface);
+    }
+}
+
+/// <summary>A small solid circle marking a state.</summary>
 public sealed class Dot : Border
 {
     public Dot(Tone tone, double size = 8)
@@ -70,7 +110,7 @@ public sealed class Meter : Border
         this[!BackgroundProperty] = Palette.Dyn(onInk ? Palette.InkTrack : Palette.Track);
         if (onInk)
         {
-            _bar[!BackgroundProperty] = Palette.Dyn(Palette.InkText);
+            _bar[!BackgroundProperty] = Palette.Dyn(Palette.InkCardText);
         }
         else
         {
@@ -186,10 +226,7 @@ public sealed class RemovableChip : Border
     public event Action? Removed;
 }
 
-/// <summary>
-/// The overall state of the app at a glance: a dot, a title and a line of detail.
-/// Inverted (ink) for the most serious state.
-/// </summary>
+/// <summary>The overall state of the app at a glance: a dot, a title and a line of detail.</summary>
 public sealed class StatusPanel : Border
 {
     private readonly Dot _dot = new(Tone.Success);
@@ -202,17 +239,14 @@ public sealed class StatusPanel : Border
         BorderThickness = new Thickness(1);
         Padding = new Thickness(14);
         Child = Layout.Column(Space.S1, Layout.Row(Space.S2, _dot, _title), _detail);
-        SetState(Tone.Success, "", "", inverted: false);
+        this[!BackgroundProperty] = Palette.Dyn(Palette.Surface);
+        this[!BorderBrushProperty] = Palette.Dyn(Palette.Border);
     }
 
-    public void SetState(Tone dot, string title, string detail, bool inverted)
+    public void SetState(Tone dot, string title, string detail)
     {
-        _dot.SetTone(inverted ? Tone.Ink : dot);
+        _dot.SetTone(dot);
         _title.SetText(title);
         _detail.SetText(detail);
-        _title.SetTone(inverted ? TextTone.OnInk : TextTone.Primary);
-        _detail.SetTone(inverted ? TextTone.OnInkMuted : TextTone.Secondary);
-        this[!BackgroundProperty] = Palette.Dyn(inverted ? Palette.Ink : Palette.Surface);
-        this[!BorderBrushProperty] = Palette.Dyn(inverted ? Palette.Ink : Palette.Border);
     }
 }

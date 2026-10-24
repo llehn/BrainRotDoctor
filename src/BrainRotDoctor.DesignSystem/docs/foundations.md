@@ -41,10 +41,28 @@ Windows unless the user picks one.
 
 | Role | Light | Dark | Use |
 |---|---|---|---|
-| Ink | `#16171B` | `#ECECEE` | Primary buttons, selected tiles and days, ink cards |
-| InkText | `#FFFFFF` | `#16171B` | `TextTone.OnInk` |
-| InkTextMuted | `#C5C5C6` | `#4C4D50` | `TextTone.OnInkMuted`: supporting text on ink |
-| InkTrack | `#333436` | `#CFCFD1` | Meter track on ink |
+| Ink | `#16171B` | `#ECECEE` | Primary buttons, selected tiles and days |
+| InkText | `#FFFFFF` | `#16171B` | `TextTone.Inverse`: text on those |
+
+### The ink card
+
+Dark in both themes: a softer charcoal in light, near-black with an outline in
+dark. What sits on it is lighter than the card, so its controls never sink in.
+
+| Role | Light | Dark | Use |
+|---|---|---|---|
+| InkCard | `#33353C` | `#0E0F12` | The ink card |
+| InkCardBorder | `#33353C` | `#2C2D33` | Its outline (only seen in dark) |
+| InkCardText | `#FFFFFF` | `#ECECEE` | `TextTone.OnInk` |
+| InkCardTextMuted | `#CDCFD4` | `#B4B6BD` | `TextTone.OnInkMuted`: supporting text on the card |
+| InkAccent | `#5FD0C0` | `#3DBBA9` | `TextTone.OnInkAccent`: the lock in its heading |
+| InkRaised | `#3E4148` | `#1C1D22` | Unpicked tiles, the well holding its controls |
+| InkRaisedBorder | `#50535C` | `#383A41` | The outline of unpicked tiles |
+| InkLine | `#6A6D76` | `#4A4C54` | Outlines of − / + and of an outlined button on the card |
+| InkTrack | `#50535C` | `#2C2D33` | Segmented track and meter track on the card |
+| InkPick | `#FFFFFF` | `#ECECEE` | The picked tile, the picked segment, the main button |
+| InkPickText | `#16171B` | `#16171B` | Text on those |
+| InkPickMuted | `#4F525A` | `#4F525A` | The caption of the picked tile |
 
 ### Meaning
 
@@ -57,8 +75,8 @@ Windows unless the user picks one.
 | DangerSoft | `#FBE9E1` | `#45261A` | | Background of danger chips, banners, callouts |
 | Success | `#0B6B63` | `#3DBBA9` | `Success` | Healthy state (status dot) |
 | Warn | `#B07400` | `#E2A93B` | `Warn` | Temporary state marker (dot) |
-| WarnSoft | `#FBF0D9` | `#3A2E14` | | Background of warn chips, banners, the resume button |
-| WarnBorder | `#EBD3A0` | `#5C4920` | | Outline of warn banners and buttons |
+| WarnSoft | `#FBF0D9` | `#3A2E14` | | Background of warn chips, banners, badges, the resume button |
+| WarnBorder | `#EBD3A0` | `#5C4920` | | Outline of warn banners, buttons, badges and the pause dialog |
 | WarnText | `#5C3D00` | `#F2C76B` | `TextTone.Warn` | Text on warn surfaces |
 | Knob | `#FFFFFF` | `#FFFFFF` | | The knob of a switch |
 | Scrim | `#7316171B` | `#99000000` | | Dims the screen behind an `Overlay` |
@@ -76,7 +94,7 @@ little time to a lot, getting stronger (darker in light, brighter in dark).
 | Clock1–Clock5 | `#8CCBC1` → `#063F3A` | `#2F6F66` → `#C2F2EA` | `ClockFill`: under ½ h, 1 h, 2 h, 3 h, more |
 | ClockTrack | `#1A16171B` | `#2EFFFFFF` | The empty part of a clock |
 
-`Tone.Neutral` maps to the greys, `Tone.Ink` to the ink pair.
+`Tone.Neutral` maps to the greys, `Tone.Ink` to the ink pair (Ink, InkText).
 
 **Contrast.** The three text roles meet WCAG AA (4.5:1) on Surface and AppBg in
 both themes; check any new colour pair before adding it. Danger text in dark
@@ -86,7 +104,7 @@ Colour is never the only signal: chips carry words, verdicts carry
 
 ## Type
 
-One family, **Inter** (bundled), and **Cascadia Mono** (falling back to
+One family, **Inter** (shipped inside the app, so every PC shows it), and **Cascadia Mono** (falling back to
 Consolas) for literal values. Every piece of text is a `TextLine` with a `TextStyle`:
 
 | Style | Size | Weight | Default colour | Use |
@@ -132,6 +150,8 @@ A 4-pixel grid. Margins, paddings and gaps use `Space`:
 | Card | 14 | Cards, pick tiles |
 | Feature | 16 | Ink cards |
 
+Fully round, 32 high: badges. 40 across: icon discs.
+
 Fully round: switches, dots, round toggles, status chips.
 
 ## Elevation
@@ -157,5 +177,9 @@ shows (`List`, `Gear`), not what it's for. Add new ones from Lucide only.
   responsive breakpoint.
 - One `Primary` button per screen or card. Destructive actions confirm in place
   (`Danger` → `DangerSolid`), never in a dialog.
+- **No text explains how a control works.** If a button needs a sentence saying
+  what it does, the button is wrong: change the button.
+- **One look per element.** When an element's look changes, it changes
+  everywhere it's used and the old look goes; never add a parallel variant.
 - Free text only where text is truly free (names, addresses, search). Numbers
   use `Stepper`, times `TimeField`, choices `Segmented`, `RadioPill` or `Dropdown`.
