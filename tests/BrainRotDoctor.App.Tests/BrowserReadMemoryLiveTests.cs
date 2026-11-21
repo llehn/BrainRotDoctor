@@ -22,7 +22,12 @@ public sealed class BrowserReadMemoryLiveTests
     private const int Reads = 800;
     private const int FirstReads = 150;
     private const int Rounds = 4;
-    private const int CacheFillingRounds = 8;
+    private const int FirstRounds = 8;
+    private const int CacheFillingRounds = 10;
+
+    // Windows' own cache grows and shrinks by a dozen objects at a time; a leak only
+    // grows. The net growth over this many last rounds is what a read leaves behind.
+    private const int JudgedRounds = 5;
 
     // UI Automation objects a read may leave behind on average. The leak this guards
     // against (ADR-019) left one or two per read; none may stay now.
@@ -87,14 +92,14 @@ public sealed class BrowserReadMemoryLiveTests
                 using var fresh = new UiAutomationBrowserObserver();
                 return fresh.ReadSelectedUrl(window);
             }, expectPage: true);
-            Measure("the selected tab's identity", FirstReads, Rounds, () => BrowserTabCloser.SelectedTabId(window), expectPage: false);
+            Measure("the selected tab's identity", FirstReads, FirstRounds, () => BrowserTabCloser.SelectedTabId(window), expectPage: false);
             Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
 
             void Measure(string what, int reads, int rounds, Func<object?> read, bool expectPage)
             {
                 // What an earlier run left to clean up is freed, and caches fill, in
-                // the first rounds; a leak grows every round, so the middle of the
-                // last three rounds is it.
+                // the first rounds. A leak grows every round while a full cache only
+                // churns, so the net growth over the last rounds is what stays.
                 var growth = new List<double>();
                 long last = UiAutomationObjects();
                 var watch = Stopwatch.StartNew();
@@ -111,7 +116,7 @@ public sealed class BrowserReadMemoryLiveTests
                     last = now;
                 }
 
-                double perRead = growth.TakeLast(3).Order().ElementAt(1);
+                double perRead = growth.TakeLast(Math.Min(JudgedRounds, rounds - 1)).Average();
                 _output.WriteLine($"{processName}, {what}: {rounds} x {reads} reads in {watch.Elapsed.TotalSeconds:0.0} s; UI Automation objects left per 100 reads by round: {string.Join(", ", growth.Select(g => (g * 100).ToString("0.0")))}");
                 if (perRead > LimitPerRead)
                 {
