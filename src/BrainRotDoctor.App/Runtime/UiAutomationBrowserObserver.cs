@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.IO;
-using System.Windows.Automation;
+using Interop.UIAutomationClient;
 
 namespace BrainRotDoctor.App.Runtime;
 
-internal sealed class UiAutomationBrowserObserver : IBrowserObserver
+internal sealed class UiAutomationBrowserObserver : IBrowserObserver, IDisposable
 {
     internal static readonly IReadOnlyDictionary<string, string> SupportedBrowsers =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -18,14 +18,32 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         };
 
     // Everything a read needs from an element, fetched in the same call that finds it.
-    private static readonly CacheRequest Fetch = NewFetch();
+    private static readonly Lazy<IUIAutomationCacheRequest> Fetch = new(() =>
+        Uia.CacheRequest(Uia.NameProperty, Uia.ClassNameProperty, Uia.IsOffscreenProperty, Uia.ValueProperty));
 
-    private static readonly Condition PageCondition =
-        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document);
+    private static readonly Lazy<IUIAutomationCondition> PageCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.DocumentControl));
 
-    private static readonly Condition OnScreenPageCondition = new AndCondition(
-        PageCondition,
-        new PropertyCondition(AutomationElement.IsOffscreenProperty, false));
+    private static readonly Lazy<IUIAutomationCondition> OnScreenPageCondition = new(() =>
+        Uia.Automation.CreateAndCondition(PageCondition.Value, Uia.Property(Uia.IsOffscreenProperty, false)));
+
+    private static readonly Lazy<IUIAutomationCondition> FirefoxPanelsCondition = new(() =>
+        Uia.Property(Uia.AutomationIdProperty, "tabbrowser-tabpanels"));
+
+    private static readonly Lazy<IUIAutomationCondition> FirefoxAddressBarCondition = new(() =>
+        Uia.Property(Uia.AutomationIdProperty, "urlbar-input"));
+
+    private static readonly Lazy<IUIAutomationCondition> ChromiumAddressBarCondition = new(() =>
+        Uia.Property(Uia.ClassNameProperty, "OmniboxViewViews"));
+
+    private static readonly Lazy<IUIAutomationCondition> ToolBarCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.ToolBarControl));
+
+    private static readonly Lazy<IUIAutomationCondition> ButtonCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.ButtonControl));
+
+    private static readonly Lazy<IUIAutomationCondition> EditCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.EditControl));
 
     // What is known about each browser window: its address-bar tracker, so text typed
     // into one window's bar never counts as the page it shows, and what never has to
@@ -55,10 +73,22 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
 
         foreach (IntPtr gone in _windows.Keys.Where(h => result.All(w => w.WindowHandle != h)).ToArray())
         {
+            _windows[gone].Forget();
             _windows.Remove(gone);
         }
 
         return result;
+    }
+
+    /// <summary>Hands everything remembered about every window back to Windows.</summary>
+    public void Dispose()
+    {
+        foreach (WindowState state in _windows.Values)
+        {
+            state.Forget();
+        }
+
+        _windows.Clear();
     }
 
     public Uri? ReadSelectedUrl(IntPtr windowHandle)
@@ -159,50 +189,37 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         }
     }
 
-    private static CacheRequest NewFetch()
-    {
-        var fetch = new CacheRequest();
-        fetch.Add(AutomationElement.NameProperty);
-        fetch.Add(AutomationElement.ClassNameProperty);
-        fetch.Add(AutomationElement.IsOffscreenProperty);
-        fetch.Add(ValuePattern.ValueProperty);
-        return fetch;
-    }
-
     /// <summary>
     /// One read of one window (ADR-016): the address of the page in its selected tab,
     /// and whether it is private. Only the browser's own frame is looked at, never the
     /// page, and where the page sits is remembered so the next read goes straight there.
+    /// Everything found is handed back to Windows when the read ends (ADR-019).
     /// </summary>
     private static (Uri? Url, bool IsPrivate) TryReadWindow(IntPtr handle, string browserName, WindowState state, bool isForeground)
     {
         string title = NativeMethods.GetWindowTitle(handle);
+        using var scope = new UiaScope();
         try
         {
-            AutomationElement root = state.Root ??= AutomationElement.FromHandle(handle);
+            IUIAutomationElement root = state.Root ??= Uia.Automation.ElementFromHandle(handle);
             bool isFirefox = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase);
 
             // The browser reports the loaded page's own address, which is never typed text.
-            AutomationElement? page = FindPage(root, state, browserName, title);
-            if (page?.GetCachedPropertyValue(ValuePattern.ValueProperty, ignoreDefaultValue: true) is string address
+            IUIAutomationElement? page = FindPage(scope, root, state, browserName, title);
+            if (page?.GetCachedPropertyValueEx(Uia.ValueProperty, 1) is string address
                 && !string.IsNullOrWhiteSpace(address))
             {
                 // A non-web page (new tab, settings) is known but matches no rule.
                 UrlNormalizer.TryNormalize(address, out Uri? url);
-                return (state.Tracker.Confirm(url), IsPrivateWindow(title, root, state, browserName, frameReady: true));
+                return (state.Tracker.Confirm(url), IsPrivateWindow(scope, title, root, state, browserName, frameReady: true));
             }
 
             // Otherwise fall back to the address bar, guarded against unsent typing.
-            AddressBarReading? bar = isFirefox ? TryReadFirefoxAddressBar(root, state) : TryReadChromiumAddressBar(root, state);
-            bool isPrivate = IsPrivateWindow(title, root, state, browserName, frameReady: page is not null || bar is not null);
+            AddressBarReading? bar = isFirefox ? TryReadFirefoxAddressBar(scope, root, state) : TryReadChromiumAddressBar(scope, root, state);
+            bool isPrivate = IsPrivateWindow(scope, title, root, state, browserName, frameReady: page is not null || bar is not null);
             return (state.Tracker.Resolve(bar?.Text, bar?.HasFocus == true, isForeground, title), isPrivate);
         }
-        catch (ElementNotAvailableException)
-        {
-            state.Forget();
-            return (null, state.FrameSaysPrivate == true || PrivateBrowsing.LooksPrivate(title));
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (Uia.IsFailure(ex))
         {
             state.Forget();
             return (null, state.FrameSaysPrivate == true || PrivateBrowsing.LooksPrivate(title));
@@ -216,7 +233,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
     /// update that moves the page is thus found again, not missed. Only browsers whose
     /// page reports its own address are read this way; the others go by the address bar.
     /// </summary>
-    private static AutomationElement? FindPage(AutomationElement root, WindowState state, string browserName, string title)
+    private static IUIAutomationElement? FindPage(UiaScope scope, IUIAutomationElement root, WindowState state, string browserName, string title)
     {
         bool isFirefox = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase);
         if (!isFirefox && !browserName.Equals("Chrome", StringComparison.OrdinalIgnoreCase) && !browserName.Equals("Edge", StringComparison.OrdinalIgnoreCase))
@@ -224,55 +241,49 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             return null;
         }
 
-        using (Fetch.Activate())
+        if (state.PageHolder is { } holder
+            && (!isFirefox || state.SelectedPanel is { } panel && IsSelectedPanel(scope.Own(panel.BuildUpdatedCache(Fetch.Value))!))
+            && scope.Own(holder.FindFirstBuildCache(TreeScope.TreeScope_Children, PageCondition.Value, Fetch.Value)) is { } known
+            && ShowsTitle(known, title))
         {
-            if (state.PageHolder is { } holder
-                && (!isFirefox || state.SelectedPanel is { } panel && IsSelectedPanel(panel.GetUpdatedCache(Fetch)))
-                && holder.FindFirst(TreeScope.Children, PageCondition) is { } known
-                && ShowsTitle(known, title))
-            {
-                return known;
-            }
-
-            state.PageHolder = null;
-            state.SelectedPanel = null;
-            AutomationElement? page;
-            if (isFirefox)
-            {
-                // Every tab has a panel under one known element; the selected tab's is
-                // marked, even while the window is covered (then all report off screen).
-                state.Panels ??= root.FindFirst(
-                    TreeScope.Children,
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, "tabbrowser-tabpanels"));
-                AutomationElement[] panels = state.Panels?
-                    .FindAll(TreeScope.Children, Condition.TrueCondition)
-                    .Cast<AutomationElement>()
-                    .ToArray() ?? [];
-                state.SelectedPanel = panels.FirstOrDefault(IsSelectedPanel) ?? panels.FirstOrDefault(p => !p.Cached.IsOffscreen);
-                page = state.SelectedPanel?.FindFirst(TreeScope.Descendants, PageCondition)
-                    ?? (state.Panels is null ? root.FindFirst(TreeScope.Descendants, OnScreenPageCondition) : null);
-            }
-            else
-            {
-                // Chromium keeps only the selected tab's page in the window.
-                page = root.FindFirst(TreeScope.Descendants, PageCondition);
-            }
-
-            if (page is not null)
-            {
-                state.PageHolder = TreeWalker.ControlViewWalker.GetParent(page);
-            }
-
-            return page;
+            return known;
         }
+
+        state.PageHolder = null;
+        state.SelectedPanel = null;
+        IUIAutomationElement? page;
+        if (isFirefox)
+        {
+            // Every tab has a panel under one known element; the selected tab's is
+            // marked, even while the window is covered (then all report off screen).
+            state.Panels ??= root.FindFirst(TreeScope.TreeScope_Children, FirefoxPanelsCondition.Value);
+            IReadOnlyList<IUIAutomationElement> panels = state.Panels is { } all
+                ? scope.All(all.FindAllBuildCache(TreeScope.TreeScope_Children, Uia.TrueCondition, Fetch.Value))
+                : [];
+            state.SelectedPanel = scope.Keep(panels.FirstOrDefault(IsSelectedPanel) ?? panels.FirstOrDefault(p => p.CachedIsOffscreen == 0));
+            page = scope.Own(state.SelectedPanel?.FindFirstBuildCache(TreeScope.TreeScope_Descendants, PageCondition.Value, Fetch.Value))
+                ?? (state.Panels is null ? scope.Own(root.FindFirstBuildCache(TreeScope.TreeScope_Descendants, OnScreenPageCondition.Value, Fetch.Value)) : null);
+        }
+        else
+        {
+            // Chromium keeps only the selected tab's page in the window.
+            page = scope.Own(root.FindFirstBuildCache(TreeScope.TreeScope_Descendants, PageCondition.Value, Fetch.Value));
+        }
+
+        if (page is not null)
+        {
+            state.PageHolder = Uia.ControlView.GetParentElement(page);
+        }
+
+        return page;
     }
 
-    private static bool IsSelectedPanel(AutomationElement panel) =>
-        panel.Cached.ClassName.Contains("deck-selected", StringComparison.Ordinal);
+    private static bool IsSelectedPanel(IUIAutomationElement panel) =>
+        (panel.CachedClassName ?? string.Empty).Contains("deck-selected", StringComparison.Ordinal);
 
     /// <summary>The window title follows the selected tab; a page it doesn't name is another tab's.</summary>
-    private static bool ShowsTitle(AutomationElement page, string title) =>
-        page.Cached.Name is not { Length: > 0 } name || title.StartsWith(name, StringComparison.Ordinal);
+    private static bool ShowsTitle(IUIAutomationElement page, string title) =>
+        page.CachedName is not { Length: > 0 } name || title.StartsWith(name, StringComparison.Ordinal);
 
     /// <summary>
     /// Private sessions are marked on the window chrome, never on the page: the
@@ -283,7 +294,7 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
     /// every time: a new window's title is not final at once. Firefox and Edge always
     /// say so in the title, so their toolbars are never searched.
     /// </summary>
-    private static bool IsPrivateWindow(string title, AutomationElement root, WindowState state, string browserName, bool frameReady)
+    private static bool IsPrivateWindow(UiaScope scope, string title, IUIAutomationElement root, WindowState state, string browserName, bool frameReady)
     {
         if (PrivateBrowsing.LooksPrivate(title))
         {
@@ -293,10 +304,8 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         bool titleSays = browserName.Equals("Firefox", StringComparison.OrdinalIgnoreCase) || browserName.Equals("Edge", StringComparison.OrdinalIgnoreCase);
         if (state.FrameSaysPrivate is null && frameReady && !titleSays)
         {
-            using (Fetch.Activate())
-            {
-                state.FrameSaysPrivate = PrivateBrowsing.LooksPrivate(root.GetUpdatedCache(Fetch).Cached.Name) || ToolbarLooksPrivate(root);
-            }
+            IUIAutomationElement frame = scope.Own(root.BuildUpdatedCache(Fetch.Value))!;
+            state.FrameSaysPrivate = PrivateBrowsing.LooksPrivate(frame.CachedName) || ToolbarLooksPrivate(scope, root);
         }
 
         return state.FrameSaysPrivate == true;
@@ -306,28 +315,26 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
     /// Chromium's main toolbar, the first one in its frame, holds its private-session
     /// control (the profile button). The search stops there and never enters a page.
     /// </summary>
-    private static bool ToolbarLooksPrivate(AutomationElement root) =>
-        root.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ToolBar)) is { } toolbar
-        && toolbar
-            .FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button))
-            .Cast<AutomationElement>()
-            .Any(button => PrivateBrowsing.LooksPrivateButton(button.Cached.Name));
+    private static bool ToolbarLooksPrivate(UiaScope scope, IUIAutomationElement root) =>
+        scope.Own(root.FindFirstBuildCache(TreeScope.TreeScope_Descendants, ToolBarCondition.Value, Fetch.Value)) is { } toolbar
+        && scope.All(toolbar.FindAllBuildCache(TreeScope.TreeScope_Children, ButtonCondition.Value, Fetch.Value))
+            .Any(button => PrivateBrowsing.LooksPrivateButton(button.CachedName));
 
-    private static AddressBarReading? TryReadFirefoxAddressBar(AutomationElement root, WindowState state)
+    private static AddressBarReading? TryReadFirefoxAddressBar(UiaScope scope, IUIAutomationElement root, WindowState state)
     {
-        AutomationElement? urlBar = state.AddressBar ??= root.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "urlbar-input"));
-
+        IUIAutomationElement? urlBar = state.AddressBar ??= root.FindFirst(TreeScope.TreeScope_Descendants, FirefoxAddressBarCondition.Value);
         if (urlBar is null)
         {
             return null;
         }
 
-        string? text = EnumerateSelfAndDescendants(urlBar)
-            .Select(ReadAddressText)
-            .FirstOrDefault(value => UrlNormalizer.TryNormalize(value, out _));
-        return new AddressBarReading(text, urlBar.Current.HasKeyboardFocus);
+        // The bar itself first; only when it holds no address, the fields inside it.
+        string? text = ReadAddressText(urlBar) is { } own && UrlNormalizer.TryNormalize(own, out _)
+            ? own
+            : scope.All(urlBar.FindAll(TreeScope.TreeScope_Descendants, Uia.TrueCondition))
+                .Select(ReadAddressText)
+                .FirstOrDefault(value => UrlNormalizer.TryNormalize(value, out _));
+        return new AddressBarReading(text, urlBar.CurrentHasKeyboardFocus != 0);
     }
 
     /// <summary>
@@ -335,22 +342,16 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
     /// Only a Chromium browser whose bar is something else falls back to looking
     /// through every text field.
     /// </summary>
-    private static AddressBarReading? TryReadChromiumAddressBar(AutomationElement root, WindowState state)
+    private static AddressBarReading? TryReadChromiumAddressBar(UiaScope scope, IUIAutomationElement root, WindowState state)
     {
-        AutomationElement? bar = state.AddressBar ??= root.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ClassNameProperty, "OmniboxViewViews"));
+        IUIAutomationElement? bar = state.AddressBar ??= root.FindFirst(TreeScope.TreeScope_Descendants, ChromiumAddressBarCondition.Value);
         if (bar is not null)
         {
-            return new AddressBarReading(ReadAddressText(bar), bar.Current.HasKeyboardFocus);
+            return new AddressBarReading(ReadAddressText(bar), bar.CurrentHasKeyboardFocus != 0);
         }
 
-        AutomationElement[] edits = root.FindAll(
-                TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit))
-            .Cast<AutomationElement>()
-            .ToArray();
-        AutomationElement[] addressLike = edits.Where(LooksLikeAddressBar).ToArray();
+        IReadOnlyList<IUIAutomationElement> edits = scope.All(root.FindAll(TreeScope.TreeScope_Descendants, EditCondition.Value));
+        IUIAutomationElement[] addressLike = edits.Where(LooksLikeAddressBar).ToArray();
 
         // The top-most address-like field, preferring one that holds a URL;
         // otherwise any field with a URL.
@@ -358,21 +359,27 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             ?? TopMost(addressLike)
             ?? TopMost(edits.Where(HoldsUrl));
 
-        return bar is null ? null : new AddressBarReading(ReadAddressText(bar), bar.Current.HasKeyboardFocus);
+        return bar is null ? null : new AddressBarReading(ReadAddressText(bar), bar.CurrentHasKeyboardFocus != 0);
     }
 
-    private static AutomationElement? TopMost(IEnumerable<AutomationElement> elements) =>
-        elements.OrderBy(e => e.Current.BoundingRectangle.Top).FirstOrDefault();
+    private static IUIAutomationElement? TopMost(IEnumerable<IUIAutomationElement> elements) =>
+        elements.OrderBy(e => e.CurrentBoundingRectangle.top).FirstOrDefault();
 
-    private static bool HoldsUrl(AutomationElement element) =>
+    private static bool HoldsUrl(IUIAutomationElement element) =>
         UrlNormalizer.TryNormalize(ReadAddressText(element), out _);
 
     /// <summary>The element's first value that reads as a web address, else its first value.</summary>
-    private static string? ReadAddressText(AutomationElement element)
+    private static string? ReadAddressText(IUIAutomationElement element)
     {
         string? first = null;
-        foreach (string? value in ReadElementValues(element))
+        foreach (Func<IUIAutomationElement, string?> read in ValueReaders)
         {
+            string? value = read(element);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
             if (UrlNormalizer.TryNormalize(value, out _))
             {
                 return value;
@@ -384,13 +391,46 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
         return first;
     }
 
-    private static bool LooksLikeAddressBar(AutomationElement element)
+    // Where an element may hold its text, cheapest first; each is asked only if needed.
+    private static readonly Func<IUIAutomationElement, string?>[] ValueReaders =
+    [
+        element =>
+        {
+            object? pattern = element.GetCurrentPattern(Uia.ValuePattern);
+            try
+            {
+                return (pattern as IUIAutomationValuePattern)?.CurrentValue;
+            }
+            finally
+            {
+                Uia.Release(pattern);
+            }
+        },
+        element =>
+        {
+            object? pattern = element.GetCurrentPattern(Uia.TextPattern);
+            IUIAutomationTextRange? range = null;
+            try
+            {
+                range = (pattern as IUIAutomationTextPattern)?.DocumentRange;
+                return range?.GetText(2048);
+            }
+            finally
+            {
+                Uia.Release(range);
+                Uia.Release(pattern);
+            }
+        },
+        element => element.CurrentName,
+    ];
+
+    private static bool LooksLikeAddressBar(IUIAutomationElement element)
     {
         string text = string.Join(
             ' ',
-            element.Current.Name,
-            element.Current.AutomationId,
-            element.Current.ClassName);
+            element.CurrentName,
+            element.CurrentAutomationId,
+            element.CurrentClassName);
 
         return text.Contains("address", StringComparison.OrdinalIgnoreCase)
             || text.Contains("search", StringComparison.OrdinalIgnoreCase)
@@ -398,70 +438,59 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             || text.Contains("omnibox", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IEnumerable<AutomationElement> EnumerateSelfAndDescendants(AutomationElement root)
-    {
-        yield return root;
-
-        AutomationElementCollection descendants = root.FindAll(TreeScope.Descendants, Condition.TrueCondition);
-        foreach (AutomationElement descendant in descendants)
-        {
-            yield return descendant;
-        }
-    }
-
-    private static IEnumerable<string?> ReadElementValues(AutomationElement element)
-    {
-        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObj)
-            && valuePatternObj is ValuePattern valuePattern)
-        {
-            string value = valuePattern.Current.Value;
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                yield return value;
-            }
-        }
-
-        if (element.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObj)
-            && textPatternObj is TextPattern textPattern)
-        {
-            string value = textPattern.DocumentRange.GetText(2048);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                yield return value;
-            }
-        }
-
-        string name = element.Current.Name;
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            yield return name;
-        }
-    }
-
     private sealed record AddressBarReading(string? Text, bool HasFocus);
 
-    /// <summary>What is remembered about one browser window between reads.</summary>
+    /// <summary>
+    /// What is remembered about one browser window between reads. Each remembered
+    /// element is handed back to Windows when it is replaced or forgotten.
+    /// </summary>
     private sealed class WindowState
     {
+        private IUIAutomationElement? _root;
+        private IUIAutomationElement? _panels;
+        private IUIAutomationElement? _selectedPanel;
+        private IUIAutomationElement? _pageHolder;
+        private IUIAutomationElement? _addressBar;
+
         public AddressBarTracker Tracker { get; } = new();
 
         /// <summary>Whether the window frame marks a private session, once it could be read; it never changes.</summary>
         public bool? FrameSaysPrivate { get; set; }
 
-        public AutomationElement? Root { get; set; }
+        public IUIAutomationElement? Root
+        {
+            get => _root;
+            set => Replace(ref _root, value);
+        }
 
         /// <summary>Firefox's panel that holds every tab's page.</summary>
-        public AutomationElement? Panels { get; set; }
+        public IUIAutomationElement? Panels
+        {
+            get => _panels;
+            set => Replace(ref _panels, value);
+        }
 
         /// <summary>Firefox's panel of the tab that was selected last time.</summary>
-        public AutomationElement? SelectedPanel { get; set; }
+        public IUIAutomationElement? SelectedPanel
+        {
+            get => _selectedPanel;
+            set => Replace(ref _selectedPanel, value);
+        }
 
         /// <summary>Where the selected tab's page was found last time.</summary>
-        public AutomationElement? PageHolder { get; set; }
+        public IUIAutomationElement? PageHolder
+        {
+            get => _pageHolder;
+            set => Replace(ref _pageHolder, value);
+        }
 
-        public AutomationElement? AddressBar { get; set; }
+        public IUIAutomationElement? AddressBar
+        {
+            get => _addressBar;
+            set => Replace(ref _addressBar, value);
+        }
 
-        /// <summary>An element went away (the browser rebuilt its frame): find everything again.</summary>
+        /// <summary>An element went away (the browser rebuilt its frame), or the window did: find everything again.</summary>
         public void Forget()
         {
             Root = null;
@@ -469,6 +498,15 @@ internal sealed class UiAutomationBrowserObserver : IBrowserObserver
             SelectedPanel = null;
             PageHolder = null;
             AddressBar = null;
+        }
+
+        private static void Replace(ref IUIAutomationElement? field, IUIAutomationElement? value)
+        {
+            if (!ReferenceEquals(field, value))
+            {
+                Uia.Release(field);
+                field = value;
+            }
         }
     }
 }

@@ -783,9 +783,9 @@ harsh black/white "dark" theme and a prominent theme switch.
 - **Theme.** A soft, layered light/dark palette (theme dictionaries), not raw
   Fluent defaults. The default follows the OS; the choice lives in Settings, not
   in the chrome (a theme switch is needed only rarely).
-- **UI framework.** Rebuilt in Avalonia, replacing Windows Forms. `UseWPF`
-  remains enabled solely to reference the UI Automation client assemblies; no
-  WPF windows are created.
+- **UI framework.** Rebuilt in Avalonia, replacing Windows Forms. Browsers are
+  read through UI Automation's own COM interface (ADR-019), so WPF is not
+  referenced at all.
 
 #### Rejected Alternatives
 
@@ -874,9 +874,8 @@ not a bypass guarantee).
   install writes files + autostart + Apps & features entry; uninstall is refused
   (exit 1, entry intact) while a strict-mode marker is present and succeeds
   (entry + autostart removed, files self-deleted) once it is cleared.
-- The distributable is large (~150 MB) because it is self-contained including
-  WPF (referenced only for the UI Automation client) and Avalonia; slimming this
-  is possible future work.
+- The distributable is large because it is self-contained including Avalonia.
+  It no longer carries WPF (ADR-019).
 
 ### ADR-009: Silent, Signed Auto-Update from GitHub Releases
 
@@ -1473,6 +1472,52 @@ the answer is known.
   The other hook still covers reboot if it is healthy.
 - The minute check of the task is the expensive question. It is not on the
   switch's clock.
+
+### ADR-019: Reading a Browser Leaves Nothing Behind
+
+- **Status:** Accepted
+- **Date:** 2026-11-21
+- **Constrains:** ADR-002 (how browsers are read), ADR-016 (reading every second)
+
+#### Context
+
+After five days of running, the app held over 500 MB. The app's own memory was
+46 MB. The rest was 1.36 million small records inside Windows' UI Automation
+engine, one for each browser element the app had ever looked at. The app let go
+of every element. The WPF UI Automation client it read browsers through did not
+pass that on to Windows. A live test showed exactly one record left per read in
+Chrome and Edge, and two in Firefox, on every read.
+
+#### Decision
+
+- **Browsers are read through UI Automation's own COM interface.** This is
+  Windows' current interface. The WPF client is no longer used, and WPF is no
+  longer referenced.
+- **Everything found is given back when the read ends.** An element worth
+  remembering for the next read is given back when it is replaced, or when its
+  window closes.
+- **Enforced by a live test.** For each installed browser, a heavy page is
+  opened and read many times: a known window, a window seen for the first time,
+  and the selected-tab lookup that tab closing uses. The test counts the UI
+  Automation records alive in the app after each round of reads. It fails if
+  they keep growing.
+
+#### Rejected Alternatives
+
+**Restart the reading regularly so the leak dies with it.** Rejected as the
+fix: it hides a leak instead of removing it. It stays an option should Windows
+itself ever leak again.
+
+**Read less often.** Rejected: it slows the leak but does not stop it.
+
+#### Consequences
+
+- Windows keeps the last few hundred elements found in a window in a cache of
+  its own. That cache stops growing once full. The test lets it fill before it
+  judges.
+- Any change to how a browser is read must pass the memory test, in every
+  browser, as well as the speed test (ADR-016).
+- The app is smaller, since it no longer ships WPF.
 
 ## Contributing, License, and Security
 

@@ -1,4 +1,4 @@
-using System.Windows.Automation;
+using Interop.UIAutomationClient;
 
 namespace BrainRotDoctor.App.Runtime;
 
@@ -197,12 +197,12 @@ internal sealed class BrowserTabCloser : IBrowserTabCloser
     /// </summary>
     private static bool TryPressCloseButton(IntPtr windowHandle)
     {
+        using var scope = new UiaScope();
         try
         {
-            AutomationElement? closeButton = FindSelectedTabCloseButton(AutomationElement.FromHandle(windowHandle));
-            if (closeButton is null
-                || !closeButton.TryGetCurrentPattern(InvokePattern.Pattern, out object patternObj)
-                || patternObj is not InvokePattern invoke)
+            IUIAutomationElement root = scope.Own(Uia.Automation.ElementFromHandle(windowHandle))!;
+            if (FindSelectedTabCloseButton(scope, root) is not { } closeButton
+                || scope.Own(closeButton.GetCurrentPattern(Uia.InvokePattern)) is not IUIAutomationInvokePattern invoke)
             {
                 return false;
             }
@@ -226,75 +226,53 @@ internal sealed class BrowserTabCloser : IBrowserTabCloser
 
             return true;
         }
-        catch (ElementNotAvailableException)
-        {
-            return false;
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (Uia.IsFailure(ex))
         {
             return false;
         }
     }
 
-    private static AutomationElement? FindSelectedTabCloseButton(AutomationElement root)
+    private static IUIAutomationElement? FindSelectedTabCloseButton(UiaScope scope, IUIAutomationElement root)
     {
-        AutomationElement? tab = FindSelectedTab(root);
-        if (tab is null)
+        if (FindSelectedTab(scope, root) is not { } tab)
         {
             return null;
         }
 
         // Matched by class, not by (localized) name: Firefox "tab-close-button",
         // Chrome "TabCloseButton", Edge "EdgeTabCloseButton".
-        AutomationElementCollection buttons = tab.FindAll(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-        foreach (AutomationElement button in buttons)
-        {
-            string className = button.Current.ClassName ?? string.Empty;
-            if (className.Contains("CloseButton", StringComparison.OrdinalIgnoreCase)
-                || className.Contains("close-button", StringComparison.OrdinalIgnoreCase))
-            {
-                return button;
-            }
-        }
-
-        return null;
+        return scope.All(tab.FindAllBuildCache(TreeScope.TreeScope_Descendants, ButtonCondition.Value, ClassNameFetch.Value))
+            .FirstOrDefault(button => (button.CachedClassName ?? string.Empty) is var className
+                && (className.Contains("CloseButton", StringComparison.OrdinalIgnoreCase)
+                    || className.Contains("close-button", StringComparison.OrdinalIgnoreCase)));
     }
 
-    private static AutomationElement? FindSelectedTab(AutomationElement root)
-    {
-        AutomationElementCollection tabs = root.FindAll(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
-
-        foreach (AutomationElement tab in tabs)
-        {
-            if (tab.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selectionObj)
-                && selectionObj is SelectionItemPattern selection
-                && selection.Current.IsSelected)
-            {
-                return tab;
-            }
-        }
-
-        return null;
-    }
+    private static IUIAutomationElement? FindSelectedTab(UiaScope scope, IUIAutomationElement root) =>
+        scope.All(root.FindAll(TreeScope.TreeScope_Descendants, TabItemCondition.Value))
+            .FirstOrDefault(tab => scope.Own(tab.GetCurrentPattern(Uia.SelectionItemPattern)) is IUIAutomationSelectionItemPattern selection
+                && selection.CurrentIsSelected != 0);
 
     /// <summary>The selected tab's identity, or null when the browser does not expose it.</summary>
-    private static int[]? SelectedTabId(IntPtr windowHandle)
+    internal static int[]? SelectedTabId(IntPtr windowHandle)
     {
+        using var scope = new UiaScope();
         try
         {
-            return FindSelectedTab(AutomationElement.FromHandle(windowHandle))?.GetRuntimeId();
+            IUIAutomationElement root = scope.Own(Uia.Automation.ElementFromHandle(windowHandle))!;
+            return FindSelectedTab(scope, root)?.GetRuntimeId();
         }
-        catch (ElementNotAvailableException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (Uia.IsFailure(ex))
         {
             return null;
         }
     }
+
+    private static readonly Lazy<IUIAutomationCondition> ButtonCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.ButtonControl));
+
+    private static readonly Lazy<IUIAutomationCondition> TabItemCondition = new(() =>
+        Uia.Property(Uia.ControlTypeProperty, Uia.TabItemControl));
+
+    private static readonly Lazy<IUIAutomationCacheRequest> ClassNameFetch = new(() =>
+        Uia.CacheRequest(Uia.ClassNameProperty));
 }

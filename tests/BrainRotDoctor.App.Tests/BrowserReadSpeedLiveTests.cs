@@ -4,7 +4,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Windows.Automation;
+using Interop.UIAutomationClient;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -135,16 +135,16 @@ public sealed class BrowserReadSpeedLiveTests
     /// </summary>
     private static bool SelectTabUntilRead(UiAutomationBrowserObserver observer, IntPtr window, string tabName, string path)
     {
-        var tab = AutomationElement.FromHandle(window)
-            .FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem))
-            .Cast<AutomationElement>()
-            .FirstOrDefault(t => t.Current.Name.StartsWith(tabName, StringComparison.Ordinal));
+        using var scope = new UiaScope();
+        IUIAutomationElement root = scope.Own(Uia.Automation.ElementFromHandle(window))!;
+        IUIAutomationElement? tab = scope.All(root.FindAll(TreeScope.TreeScope_Descendants, Uia.Property(Uia.ControlTypeProperty, Uia.TabItemControl)))
+            .FirstOrDefault(t => (t.CurrentName ?? string.Empty).StartsWith(tabName, StringComparison.Ordinal));
         if (tab is null)
         {
             return false;
         }
 
-        ((SelectionItemPattern)tab.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+        ((IUIAutomationSelectionItemPattern)scope.Own(tab.GetCurrentPattern(Uia.SelectionItemPattern))!).Select();
         var watch = Stopwatch.StartNew();
         while (watch.Elapsed < TimeSpan.FromSeconds(5))
         {
@@ -160,17 +160,17 @@ public sealed class BrowserReadSpeedLiveTests
     }
 
     /// <summary>What the window's address bar and page say, for a failure message.</summary>
-    private static string Inside(IntPtr handle)
+    internal static string Inside(IntPtr handle)
     {
         try
         {
-            var root = AutomationElement.FromHandle(handle);
-            var all = root.FindAll(TreeScope.Descendants, Condition.TrueCondition)
-                .Cast<AutomationElement>()
-                .Where(e => e.Current.ControlType == ControlType.Document || e.Current.ControlType == ControlType.Edit)
+            using var scope = new UiaScope();
+            IUIAutomationElement root = scope.Own(Uia.Automation.ElementFromHandle(handle))!;
+            var all = scope.All(root.FindAll(TreeScope.TreeScope_Descendants, Uia.TrueCondition))
+                .Where(e => e.CurrentControlType is Uia.DocumentControl or Uia.EditControl)
                 .Take(6)
-                .Select(e => e.Current.ControlType.ProgrammaticName + " id=" + e.Current.AutomationId + " off=" + e.Current.IsOffscreen + " name=" + e.Current.Name + " focus=" + e.Current.HasKeyboardFocus + " value="
-                    + (e.TryGetCurrentPattern(ValuePattern.Pattern, out object p) ? ((ValuePattern)p).Current.Value : "-"));
+                .Select(e => (e.CurrentControlType == Uia.DocumentControl ? "Document" : "Edit") + " id=" + e.CurrentAutomationId + " off=" + (e.CurrentIsOffscreen != 0) + " name=" + e.CurrentName + " focus=" + (e.CurrentHasKeyboardFocus != 0) + " value="
+                    + (scope.Own(e.GetCurrentPattern(Uia.ValuePattern)) is IUIAutomationValuePattern p ? p.CurrentValue : "-"));
             return "[" + string.Join("; ", all) + "]";
         }
         catch (Exception ex)
@@ -180,7 +180,7 @@ public sealed class BrowserReadSpeedLiveTests
     }
 
     /// <summary>The window of ours that shows the feed page, or zero when none did in time.</summary>
-    private static IntPtr WaitForPage(UiAutomationBrowserObserver observer, string processName, DateTime startedAt, TimeSpan limit, out string seen)
+    internal static IntPtr WaitForPage(UiAutomationBrowserObserver observer, string processName, DateTime startedAt, TimeSpan limit, out string seen)
     {
         seen = "nothing";
         var watch = Stopwatch.StartNew();
@@ -212,7 +212,7 @@ public sealed class BrowserReadSpeedLiveTests
     /// Serves one feed-like page on a local port: hundreds of posts, each with
     /// text, a link and its own buttons, as on a short-video or social feed.
     /// </summary>
-    private sealed class FeedPageServer : IDisposable
+    internal sealed class FeedPageServer : IDisposable
     {
         public const string Path = "/feed";
         public const string OtherPath = "/other";

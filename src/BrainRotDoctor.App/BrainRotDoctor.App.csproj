@@ -9,11 +9,6 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>BrainRotDoctor</AssemblyName>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <!-- UseWPF is enabled only to reference the UIAutomation client assemblies
-         (System.Windows.Automation) used to read the browser address bar. The UI
-         itself is Avalonia; no WPF windows are created. -->
-    <UseWPF>true</UseWPF>
-    <EnableDefaultXamlItems>false</EnableDefaultXamlItems>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -34,6 +29,9 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
+    <!-- Windows UI Automation's own COM interface, used to read browser windows
+         (ADR-019). It replaces the WPF UI Automation client, which leaked. -->
+    <PackageReference Include="Interop.UIAutomationClient" Version="10.19041.0" />
   </ItemGroup>
 
 </Project>
