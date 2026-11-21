@@ -4,7 +4,7 @@ namespace BrainRotDoctor.App.Runtime;
 
 /// <summary>
 /// Wakes the other running copies of this app on every check (ADR-014) without
-/// listing every process on the machine each time (ADR-020). The copies are found
+/// listing every process on the machine each time. The copies are found
 /// once and then held by handle; each check wakes them by that handle. The machine
 /// is looked through again only when a known copy has exited, when none is known
 /// (at most once a second), and every ten seconds as a safety net for a copy that

@@ -184,7 +184,7 @@ public sealed partial class ProcessProtectorTests
     }
 
     /// <summary>
-    /// ADR-020: each role checks its partner 20 times a second, so one check must cost
+    /// Each role checks its partner 20 times a second, so one check must cost
     /// next to nothing. Runs the check as the roles run it, with a real partner found
     /// through the real process list, and measures this thread's processor time.
     /// </summary>
