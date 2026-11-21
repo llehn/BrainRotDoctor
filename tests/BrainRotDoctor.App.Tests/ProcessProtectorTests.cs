@@ -3,11 +3,16 @@ using System.IO;
 using System.Runtime.InteropServices;
 using BrainRotDoctor.App.Runtime;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace BrainRotDoctor.App.Tests;
 
 public sealed partial class ProcessProtectorTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public ProcessProtectorTests(ITestOutputHelper output) => _output = output;
+
     private static readonly DateTimeOffset T0 = new(2026, 10, 19, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -96,29 +101,132 @@ public sealed partial class ProcessProtectorTests
     }
 
     [Fact]
-    public void ThawProcess_wakes_a_frozen_process()
+    public void Wake_wakes_a_frozen_partner_by_its_held_handle_without_looking_again()
     {
         using Sleeper sleeper = Sleeper.Start();
+        int lookups = 0;
+        using var waker = new SiblingWaker(() => { lookups++; return [sleeper.Id]; });
+        waker.Wake(T0);
 
         Assert.True(Suspend(sleeper.Id));
         Assert.True(WaitUntil(() => IsFrozen(sleeper.Process), TimeSpan.FromSeconds(2)));
 
-        ProcessProtector.ThawProcess(sleeper.Id);
+        waker.Wake(T0.AddMilliseconds(50));
 
         Assert.True(WaitUntil(() => !IsFrozen(sleeper.Process), TimeSpan.FromSeconds(2)));
         Assert.False(sleeper.Process.HasExited);
+        Assert.Equal(1, lookups);
     }
 
     [Fact]
-    public void ThawProcess_leaves_a_running_process_running()
+    public void Wake_leaves_a_running_partner_running()
     {
         using Sleeper sleeper = Sleeper.Start();
+        using var waker = new SiblingWaker(() => [sleeper.Id]);
 
-        ProcessProtector.ThawProcess(sleeper.Id);
+        waker.Wake(T0);
+        waker.Wake(T0.AddMilliseconds(50));
 
         Assert.False(IsFrozen(sleeper.Process));
         Assert.False(sleeper.Process.HasExited);
     }
+
+    [Fact]
+    public void Wake_looks_through_the_machine_once_while_the_partner_lives_and_then_only_as_a_safety_net()
+    {
+        using Sleeper sleeper = Sleeper.Start();
+        using var waker = new SiblingWaker(() => [sleeper.Id]);
+
+        // Ten seconds of checks at 50 ms: one look, then the partner is held.
+        for (int i = 0; i < 199; i++)
+        {
+            waker.Wake(T0.AddMilliseconds(50 * i));
+        }
+
+        Assert.Equal(1, waker.Lookups);
+        Assert.Equal([sleeper.Id], waker.Known);
+
+        waker.Wake(T0 + SiblingWaker.SafetyNetInterval);
+        Assert.Equal(2, waker.Lookups);
+        Assert.Equal([sleeper.Id], waker.Known);
+    }
+
+    [Fact]
+    public void Wake_looks_again_at_once_when_the_partner_has_exited()
+    {
+        Sleeper first = Sleeper.Start();
+        using Sleeper second = Sleeper.Start();
+        int[] running = [first.Id];
+        using var waker = new SiblingWaker(() => running);
+        waker.Wake(T0);
+        Assert.Equal([first.Id], waker.Known);
+
+        first.Dispose();
+        running = [second.Id];
+        waker.Wake(T0.AddMilliseconds(50));
+
+        Assert.Equal(2, waker.Lookups);
+        Assert.Equal([second.Id], waker.Known);
+    }
+
+    [Fact]
+    public void Wake_looks_at_most_once_a_second_while_no_partner_is_found()
+    {
+        using var waker = new SiblingWaker(() => []);
+
+        for (int i = 0; i < 40; i++)
+        {
+            waker.Wake(T0.AddMilliseconds(50 * i));
+        }
+
+        // 0 s and 1 s; 2 s is not reached.
+        Assert.Equal(2, waker.Lookups);
+    }
+
+    /// <summary>
+    /// ADR-020: each role checks its partner 20 times a second, so one check must cost
+    /// next to nothing. Runs the check as the roles run it, with a real partner found
+    /// through the real process list, and measures this thread's processor time.
+    /// </summary>
+    [Fact]
+    public void A_partner_check_costs_under_200_microseconds_of_processor_time()
+    {
+        const int Checks = 4000; // 200 s of checks: the safety net and its process list are included.
+        // A name of its own: other tests end ping processes by name.
+        using Sleeper sleeper = Sleeper.Start("brd-partner-" + Guid.NewGuid().ToString("N"));
+        string exe = Environment.ProcessPath!;
+        using var held = new HeldMutex(UniqueMutex());
+        using var waker = new SiblingWaker(() => SiblingWaker.OtherInstancesOf(sleeper.Process.ProcessName));
+        using var watch = new PartnerWatch(held.Name, UniqueMutex(), TimeSpan.FromSeconds(30), () => throw new InvalidOperationException("The partner is running."), waker.Wake);
+        var standdown = BrainRotDoctor.App.Runtime.Update.UpdateStanddown.ForCurrentProcess();
+
+        watch.Tick(T0);
+        Assert.Contains(sleeper.Id, waker.Known);
+        TimeSpan before = ThreadTime();
+        for (int i = 1; i <= Checks; i++)
+        {
+            _ = standdown.IsActive() || UninstallGuard.IsBlocked(exe);
+            watch.Tick(T0.AddMilliseconds(50 * i));
+        }
+
+        double perCheck = (ThreadTime() - before).TotalMilliseconds * 1000 / Checks;
+        Assert.Contains(sleeper.Id, waker.Known);
+        _output.WriteLine($"one partner check: {perCheck:0.0} µs of processor time, {waker.Lookups} looks through the machine in {Checks} checks");
+        Assert.True(perCheck < 200, $"one partner check took {perCheck:0.0} µs of processor time; the limit is 200 µs (0.4% of one thread at 20 checks a second). Listing every process on the machine costs about 2000 µs.");
+    }
+
+    private static TimeSpan ThreadTime()
+    {
+        Assert.True(GetThreadTimes(GetCurrentThread(), out _, out _, out long kernel, out long user));
+        return TimeSpan.FromTicks(kernel + user);
+    }
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetCurrentThread();
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetThreadTimes(IntPtr thread, out long creation, out long exit, out long kernel, out long user);
 
     private static string UniqueMutex() => $@"Local\BrainRotDoctor.Test.{Guid.NewGuid():N}";
 
@@ -236,6 +344,7 @@ public sealed partial class ProcessProtectorTests
 
         public HeldMutex(string name)
         {
+            Name = name;
             _thread = new Thread(() =>
             {
                 using var mutex = new Mutex(initiallyOwned: true, name);
@@ -245,6 +354,8 @@ public sealed partial class ProcessProtectorTests
             _thread.Start();
             _held.WaitOne();
         }
+
+        public string Name { get; }
 
         public void Dispose()
         {
@@ -263,7 +374,7 @@ public sealed partial class ProcessProtectorTests
         {
             Role = UniqueMutex();
             Starting = UniqueMutex();
-            _watch = new PartnerWatch(Role, Starting, timeout ?? TimeSpan.FromSeconds(30), () => Starts++, () => { });
+            _watch = new PartnerWatch(Role, Starting, timeout ?? TimeSpan.FromSeconds(30), () => Starts++, _ => { });
         }
 
         public string Role { get; }
@@ -280,25 +391,41 @@ public sealed partial class ProcessProtectorTests
     private sealed class Sleeper : IDisposable
     {
         private readonly Process _process;
+        private readonly string? _copy;
 
-        private Sleeper(Process process) => _process = process;
+        private Sleeper(Process process, string? copy)
+        {
+            _process = process;
+            _copy = copy;
+        }
 
         public Process Process => _process;
 
         public int Id => _process.Id;
 
-        public static Sleeper Start()
+        /// <summary>Starts ping for 30 s; under <paramref name="name"/> when given, from a copy of its own.</summary>
+        public static Sleeper Start(string? name = null)
         {
+            string ping = Path.Combine(Environment.SystemDirectory, "ping.exe");
+            string? copy = null;
+            if (name is not null)
+            {
+                copy = Path.Combine(Path.GetTempPath(), name);
+                Directory.CreateDirectory(copy);
+                File.Copy(ping, Path.Combine(copy, name + ".exe"));
+                ping = Path.Combine(copy, name + ".exe");
+            }
+
             var info = new ProcessStartInfo
             {
-                FileName = Path.Combine(Environment.SystemDirectory, "ping.exe"),
+                FileName = ping,
                 Arguments = "-n 30 127.0.0.1",
                 CreateNoWindow = true,
                 UseShellExecute = false,
             };
             Process process = System.Diagnostics.Process.Start(info)
                 ?? throw new InvalidOperationException("ping did not start.");
-            var sleeper = new Sleeper(process);
+            var sleeper = new Sleeper(process, copy);
             try
             {
                 Assert.True(WaitUntil(() =>
@@ -326,6 +453,18 @@ public sealed partial class ProcessProtectorTests
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
+            }
+
+            if (_copy is not null)
+            {
+                _process.WaitForExit(2000);
+                try
+                {
+                    Directory.Delete(_copy, recursive: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
             }
 
             _process.Dispose();

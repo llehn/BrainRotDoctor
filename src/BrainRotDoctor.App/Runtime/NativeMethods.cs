@@ -151,4 +151,12 @@ internal static partial class NativeMethods
     /// <summary>Undoes a process-wide freeze. A no-op when the process is already running.</summary>
     [LibraryImport("ntdll.dll")]
     public static partial int NtResumeProcess(IntPtr processHandle);
+
+    /// <summary>Enough to tell whether a process has exited.</summary>
+    public const uint SYNCHRONIZE = 0x00100000;
+
+    public const uint WAIT_TIMEOUT = 0x00000102;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
 }

@@ -72,12 +72,12 @@ internal sealed class PartnerWatch : IDisposable
     private readonly string _startMutexName;
     private readonly TimeSpan _startTimeout;
     private readonly Action _start;
-    private readonly Action _thaw;
+    private readonly Action<DateTimeOffset> _thaw;
 
     private Mutex? _startGuard;
     private DateTimeOffset _startedAt;
 
-    public PartnerWatch(string roleMutexName, string startMutexName, TimeSpan startTimeout, Action start, Action thaw)
+    public PartnerWatch(string roleMutexName, string startMutexName, TimeSpan startTimeout, Action start, Action<DateTimeOffset> thaw)
     {
         _roleMutexName = roleMutexName;
         _startMutexName = startMutexName;
@@ -88,7 +88,7 @@ internal sealed class PartnerWatch : IDisposable
 
     public void Tick(DateTimeOffset now)
     {
-        _thaw();
+        _thaw(now);
 
         if (_startGuard is not null)
         {

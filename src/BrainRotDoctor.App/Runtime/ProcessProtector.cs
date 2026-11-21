@@ -20,10 +20,11 @@ internal sealed class ProcessProtector : IDisposable
 
     private readonly CancellationTokenSource _stop = new();
     private readonly PartnerWatch _watch;
+    private readonly SiblingWaker _siblings = new(() => SiblingWaker.OtherInstancesOf(CurrentProcessName));
 
     private ProcessProtector(string roleMutexName, string startMutexName, string[] startArgs)
     {
-        _watch = new PartnerWatch(roleMutexName, startMutexName, StartTimeout, () => StartSibling(startArgs), ThawSiblings);
+        _watch = new PartnerWatch(roleMutexName, startMutexName, StartTimeout, () => StartSibling(startArgs), _siblings.Wake);
     }
 
     public static Mutex AcquirePrimary(out bool ownsMutex) =>
@@ -83,6 +84,7 @@ internal sealed class ProcessProtector : IDisposable
             if (standdown.IsActive() || UninstallGuard.IsBlocked(CurrentExe()))
             {
                 protector._watch.ReleaseStart();
+                protector._siblings.Dispose();
                 return;
             }
 
@@ -146,62 +148,7 @@ internal sealed class ProcessProtector : IDisposable
         finally
         {
             _watch.ReleaseStart();
-        }
-    }
-
-    /// <summary>Wakes every other instance of this executable. A running instance is left alone.</summary>
-    internal static void ThawSiblings()
-    {
-        Process[] processes;
-        try
-        {
-            processes = Process.GetProcessesByName(CurrentProcessName);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            return;
-        }
-
-        foreach (Process process in processes)
-        {
-            try
-            {
-                if (process.Id != Environment.ProcessId)
-                {
-                    ThawProcess(process.Id);
-                }
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Undoes a process-wide freeze. Does nothing if the process is already running or gone.</summary>
-    internal static void ThawProcess(int processId)
-    {
-        if (processId <= 0 || processId == Environment.ProcessId)
-        {
-            return;
-        }
-
-        IntPtr handle = NativeMethods.OpenProcess(NativeMethods.PROCESS_SUSPEND_RESUME, false, (uint)processId);
-        if (handle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        try
-        {
-            NativeMethods.NtResumeProcess(handle);
-        }
-        finally
-        {
-            NativeMethods.CloseHandle(handle);
+            _siblings.Dispose();
         }
     }
 

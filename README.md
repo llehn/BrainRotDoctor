@@ -1519,6 +1519,50 @@ itself ever leak again.
   browser, as well as the speed test (ADR-016).
 - The app is smaller, since it no longer ships WPF.
 
+### ADR-020: Watching the Partner Costs Next to Nothing
+
+- **Status:** Accepted
+- **Date:** 2026-11-21
+- **Amends:** ADR-014 (how a frozen partner is found)
+
+#### Context
+
+Each role checks its partner 20 times a second (ADR-014). To find the partner
+to wake, every check listed every process on the machine, with all their
+threads. On a machine with 326 processes and 5,241 threads one list costs about
+2 ms of processor time, almost all of it inside Windows. 20 lists a second came
+to about 2.5% of one thread per role, and it grew as the machine got busier.
+After a few days both roles together used about 0.3% of a 16-thread machine.
+
+#### Decision
+
+- **The partner is found once and then held.** Each role keeps a handle to the
+  other running copies of the app, and each check wakes them through that
+  handle. Waking a running copy does nothing.
+- **The machine is looked through only when something changed:** when a held
+  copy has exited, when none is known (at most once a second), and every ten
+  seconds as a safety net for a copy that appeared while another was known.
+- The check stays at 50 ms. A frozen partner is still woken on the next check.
+- **Enforced by a test.** A partner check, run as the roles run it with a real
+  partner, must cost under 200 µs of processor time. Listing every process
+  costs about 2,000 µs.
+
+#### Rejected Alternatives
+
+**Check less often.** Rejected: a frozen partner would stay frozen longer, and
+each check would still list the whole machine.
+
+**Each role publishes its process id for the other to read.** Rejected for now:
+holding a handle needs no new shared state, and a handle cannot be fooled by a
+reused process id.
+
+#### Consequences
+
+- A check now costs about 40 µs, most of it the two marker files that announce
+  an update or an uninstall. The partner checks of both roles together come to
+  about 0.01% of a 16-thread machine, and that no longer grows with the number
+  of processes running.
+
 ## Contributing, License, and Security
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for build,
